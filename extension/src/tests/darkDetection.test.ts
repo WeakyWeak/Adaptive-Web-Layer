@@ -25,6 +25,7 @@ describe("dark page signal classification", () => {
     expect(shouldSkipDarkTheme("dark", status, true)).toBe(true);
     expect(shouldSkipDarkTheme("light", status, false)).toBe(false);
     expect(shouldSkipDarkTheme("sepia", status, false)).toBe(false);
+    expect(shouldSkipDarkTheme("dark", status, false, "smart")).toBe(false);
   });
 
   it("does not treat a bright page as dark", () => {

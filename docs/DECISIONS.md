@@ -23,3 +23,5 @@ P03 follow-up: The fixture server serves repository-relative `/fixtures/...` pat
 P03 follow-up: Appearance operations are updated independently by parameter signature. Repeated SPA/mutation refreshes leave an unchanged Smart theme and its marker palette mounted, while Light/Sepia slider changes update only the composed filter and adjustment variables.
 P03 follow-up: The composed filter is generated directly. Expanding a `none` custom property before contrast, brightness, or saturation makes the whole CSS declaration invalid in Light, Sepia, and Smart.
 P03 follow-up: Smart includes body readiness in its theme plan. A document-start application with no body is replaced once at DOM-ready, then remains stable through later scroll-driven refreshes.
+P03 follow-up: Existing-dark detection skips Fast only. Applying the skip to Smart caused Smart Dark to detect its own recolored palette after a dynamic class change and remove itself.
+P03 follow-up: Typography is a no-op when resolved values are unchanged, so mutation refreshes do not rewrite the shared stylesheet that carries the Smart palette.

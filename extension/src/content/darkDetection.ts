@@ -18,8 +18,11 @@ export function shouldSkipDarkTheme(
   theme: "light" | "dark" | "sepia",
   detection: DarkDetectionResult,
   forceDark: boolean,
+  engine: "fast" | "smart" = "fast",
 ): boolean {
-  return theme === "dark" && detection.alreadyDark && (!forceDark || detection.explicitDark);
+  // Only Fast uses inversion, which would turn an existing dark palette light.
+  // Smart directly maps individual colors and is safe to evaluate on a dark page.
+  return engine === "fast" && theme === "dark" && detection.alreadyDark && (!forceDark || detection.explicitDark);
 }
 
 export function classifyDarkSignals(input: DarkSignals): DarkDetectionResult {

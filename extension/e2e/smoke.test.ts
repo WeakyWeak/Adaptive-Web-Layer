@@ -111,9 +111,17 @@ test.describe("Extension smoke test", () => {
 
       await expect.poll(() => page.locator("[data-awl-smart-target]").count()).toBeGreaterThan(0);
       const beforeScroll = await page.locator("style[data-awl]").textContent();
+      await page.evaluate(() => {
+        const style = document.querySelector("style[data-awl]");
+        let stylesheetMutations = 0;
+        new MutationObserver(() => { stylesheetMutations += 1; }).observe(style!, { childList: true, subtree: true, characterData: true });
+        document.body.classList.toggle("scroll-state");
+        (window as Window & { awlStylesheetMutations?: () => number }).awlStylesheetMutations = () => stylesheetMutations;
+      });
       await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
       await page.waitForTimeout(300);
       expect(await page.locator("style[data-awl]").textContent()).toBe(beforeScroll);
+      expect(await page.evaluate(() => (window as Window & { awlStylesheetMutations?: () => number }).awlStylesheetMutations?.())).toBe(0);
 
       await page.goto(`${FIXTURES_URL}/native-dark.html`, { waitUntil: "domcontentloaded" });
       await saveAppearance(serviceWorker, { theme: "light", engine: "smart", contrast: 1, brightness: 1, saturation: 1 });

@@ -20,6 +20,13 @@ const _undo: TypographyPrefs[] = [];
  * Returns a combined Revert function.
  */
 export function applyTypography(ctx: ApplyContext, prefs: TypographyPrefs): Revert {
+  // Content mutations can fire while a sticky header or ad slot changes class.
+  // Rewriting the shared stylesheet for identical typography also rewrites the
+  // Smart palette, which causes visible flicker on dynamic sites.
+  if (_currentRevert && _currentPrefs && JSON.stringify(_currentPrefs) === JSON.stringify(prefs)) {
+    return _currentRevert;
+  }
+
   // Revert any previous application first
   if (_currentRevert) {
     if (_currentPrefs) _undo.push(_currentPrefs);
