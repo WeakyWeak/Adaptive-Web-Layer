@@ -9,7 +9,7 @@
     "typecheck": "npm run typecheck --workspace=extension",
     "test": "npm run test --workspace=extension",
     "lint": "npm run lint --workspace=extension",
-    "fixtures": "npx --yes serve fixtures --listen 4173 --no-clipboard",
+    "fixtures": "node fixtures/serve.mjs",
     "e2e": "npm run e2e --workspace=extension"
   }
 }

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Adaptive Web Layer",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Personalization layer that adapts websites to your reading and appearance preferences.",
   "permissions": [
     "activeTab",
@@ -34,6 +34,12 @@
       "js": ["content.js"],
       "run_at": "document_start",
       "all_frames": false
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["fonts/*"],
+      "matches": ["<all_urls>"]
     }
   ],
   "icons": {

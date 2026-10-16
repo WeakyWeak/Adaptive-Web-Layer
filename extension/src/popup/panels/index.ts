@@ -9,6 +9,9 @@ export interface PanelDescriptor {
   Component: ComponentType<Record<string, never>>;
 }
 
-// Registry starts empty; phases will push() or import-inject their panels.
-// P00: no panels beyond the status panel (built into the popup root).
-export const panels: PanelDescriptor[] = [];
+// P01: Reading panel (typography settings + live preview)
+import ReadingPanel from "./ReadingPanel";
+
+export const panels: PanelDescriptor[] = [
+  { id: "reading", title: "Reading", Component: ReadingPanel as ComponentType<Record<string, never>> },
+];

@@ -1,6 +1,9 @@
 import { test, expect, chromium } from "@playwright/test";
 import path from "path";
+import { fileURLToPath } from "node:url";
+import { dirname } from "node:path";
 
+const __dirname = dirname(fileURLToPath(import.meta.url));
 const EXTENSION_PATH = path.resolve(__dirname, "../dist");
 const FIXTURES_URL = "http://localhost:4173";
 
@@ -8,6 +11,7 @@ test.describe("Extension smoke test", () => {
   test("service worker registers and content script runs on fixture", async () => {
     // Launch persistent context with extension
     const context = await chromium.launchPersistentContext("", {
+      executablePath: process.env.CHROME_PATH,
       headless: false,
       args: [
         `--disable-extensions-except=${EXTENSION_PATH}`,

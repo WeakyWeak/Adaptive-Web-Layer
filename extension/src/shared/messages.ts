@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { FONT_FAMILY_OPTIONS } from "./settings";
 
 // ─── Typed message protocol (Zod discriminated union) ───────────────────────
 // All messages between popup ↔ content script ↔ background use this schema.
@@ -41,6 +42,39 @@ export const PongResponseSchema = z.object({
 });
 export type PongResponse = z.infer<typeof PongResponseSchema>;
 
+// ── P01: Popup/Options → Content (live preview) ───────────────────────────────
+
+export const TypographyPrefsPayloadSchema = z.object({
+  fontFamily: z.enum(FONT_FAMILY_OPTIONS),
+  fontSize: z.number(),
+  lineHeight: z.number(),
+  letterSpacing: z.number(),
+  wordSpacing: z.number(),
+  paragraphSpacing: z.number(),
+  maxContentWidth: z.number(),
+});
+
+export const ApplyTypographySchema = z.object({
+  type: z.literal("APPLY_TYPOGRAPHY"),
+  payload: TypographyPrefsPayloadSchema,
+  applyToWholePage: z.boolean().default(false),
+});
+export type ApplyTypography = z.infer<typeof ApplyTypographySchema>;
+
+export const RevertTypographySchema = z.object({
+  type: z.literal("REVERT_TYPOGRAPHY"),
+});
+export type RevertTypography = z.infer<typeof RevertTypographySchema>;
+
+// ── Generic ack ───────────────────────────────────────────────────────────────
+
+export const AckSchema = z.object({
+  type: z.literal("ACK"),
+  ok: z.boolean(),
+  error: z.string().optional(),
+});
+export type Ack = z.infer<typeof AckSchema>;
+
 // ── Discriminated unions ───────────────────────────────────────────────────────
 
 export const AnyMessageSchema = z.discriminatedUnion("type", [
@@ -48,6 +82,9 @@ export const AnyMessageSchema = z.discriminatedUnion("type", [
   GetPageInfoResponseSchema,
   PingRequestSchema,
   PongResponseSchema,
+  ApplyTypographySchema,
+  RevertTypographySchema,
+  AckSchema,
 ]);
 export type AnyMessage = z.infer<typeof AnyMessageSchema>;
 
