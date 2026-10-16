@@ -40,7 +40,7 @@ export default function App(): React.ReactElement {
   const updateRule = async (enabled: boolean) => {
     if (!pageInfo) return;
     const current = matchingSiteRule(settings, pageInfo.hostname);
-    const next = { ...settings, siteRules: [...settings.siteRules.filter((r) => r.hostname !== pageInfo.hostname), { hostname: pageInfo.hostname.toLowerCase(), enabled, includeSubdomains: false, profileId: current?.profileId ?? null, disabledOperations: current?.disabledOperations ?? [], typography: current?.typography ?? {} }] };
+    const next = { ...settings, siteRules: [...settings.siteRules.filter((r) => r.hostname !== pageInfo.hostname), { hostname: pageInfo.hostname.toLowerCase(), enabled, includeSubdomains: false, profileId: current?.profileId ?? null, disabledOperations: current?.disabledOperations ?? [], typography: current?.typography ?? {}, appearance: current?.appearance ?? {} }] };
     if (await saveSettings(next)) setSettings(next);
   };
 

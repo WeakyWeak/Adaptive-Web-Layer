@@ -3,11 +3,13 @@
 // through the Operation registry. This is THE ONLY place that maps
 // settings to operations; popup, options, and agent loop all call here.
 
-import type { TypographyPrefs } from "../shared/settings";
+import type { AppearancePrefs, TypographyPrefs } from "../shared/settings";
 import { applyPlan, type ApplyContext, type PlanStep, type Revert } from "../shared/registry";
+import { appearancePlanSteps } from "./appearanceOps";
 
 // Keep track of the current revert handle so re-applying always does a clean replace
 let _currentRevert: Revert | null = null;
+let _appearanceRevert: Revert | null = null;
 let _currentPrefs: TypographyPrefs | null = null;
 const _undo: TypographyPrefs[] = [];
 
@@ -68,3 +70,22 @@ export function undoTypography(ctx: ApplyContext): boolean {
 }
 
 export function resetPage(): void { revertTypography(); }
+
+export function applyAppearance(ctx: ApplyContext, prefs: AppearancePrefs, theme = prefs.theme): Revert {
+  _appearanceRevert?.();
+  _appearanceRevert = null;
+  const result = applyPlan(ctx, appearancePlanSteps(prefs, theme));
+  if (result.errors.length) console.warn("[AWL appearance] plan had errors:", result.errors);
+  _appearanceRevert = result.revert;
+  return result.revert;
+}
+
+export function revertAppearance(): void {
+  _appearanceRevert?.();
+  _appearanceRevert = null;
+}
+
+export function resetPageAll(): void {
+  revertTypography();
+  revertAppearance();
+}

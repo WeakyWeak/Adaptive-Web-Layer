@@ -67,6 +67,12 @@ export const RevertTypographySchema = z.object({
 export type RevertTypography = z.infer<typeof RevertTypographySchema>;
 
 export const PageActionSchema = z.object({ type: z.enum(["UNDO_PAGE", "RESET_PAGE"]) });
+export const GetAppearanceStatusSchema = z.object({ type: z.literal("GET_APPEARANCE_STATUS") });
+export const AppearanceStatusSchema = z.object({
+  type: z.literal("APPEARANCE_STATUS"),
+  alreadyDark: z.boolean(),
+  signals: z.array(z.string()),
+});
 
 // ── Generic ack ───────────────────────────────────────────────────────────────
 
@@ -87,6 +93,8 @@ export const AnyMessageSchema = z.discriminatedUnion("type", [
   ApplyTypographySchema,
   RevertTypographySchema,
   PageActionSchema,
+  GetAppearanceStatusSchema,
+  AppearanceStatusSchema,
   AckSchema,
 ]);
 export type AnyMessage = z.infer<typeof AnyMessageSchema>;

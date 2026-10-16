@@ -1,9 +1,11 @@
 import { parseMessage } from "../shared/messages";
 import { loadSettings, onSettingsChange } from "../shared/storage";
-import { resolveTypography, isSiteEnabled } from "../shared/settings";
+import { resolveTypography, resolveAppearance, isSiteEnabled } from "../shared/settings";
 import { getStyleLayer } from "./styleLayer";
 import { registerTypographyOps } from "./typographyOps";
-import { applyTypography, revertTypography, undoTypography, resetPage } from "./applier";
+import { applyTypography, applyAppearance, revertTypography, revertAppearance, undoTypography, resetPageAll } from "./applier";
+import { registerAppearanceOps } from "./appearanceOps";
+import { detectExistingDark } from "./darkDetection";
 import { injectBundledFonts } from "./fontInjector";
 import type { ApplyContext } from "../shared/registry";
 
@@ -28,6 +30,7 @@ if (isRestrictedPage()) {
   // ── Bootstrap ──────────────────────────────────────────────────────────────
   // Register all operations once
   registerTypographyOps();
+  registerAppearanceOps();
 
   const styleLayer = getStyleLayer();
   // Inject bundled fonts so they are available for use
@@ -48,25 +51,36 @@ if (isRestrictedPage()) {
       const settings = await loadSettings();
       if (!isSiteEnabled(settings, hostname)) {
         revertTypography();
+        revertAppearance();
         observer?.disconnect();
         observer = null;
         return;
       }
       const prefs = resolveTypography(settings, hostname);
+      const appearance = resolveAppearance(settings, hostname);
+      const darkStatus = detectExistingDark();
+      const effectiveTheme = appearance.theme === "dark" && darkStatus.alreadyDark && !appearance.forceDark ? "light" : appearance.theme;
       const ctx = makeCtx(settings.global.applyToWholePage);
+      // Apply the root theme as soon as storage resolves, before prose-level rules.
+      applyAppearance(ctx, appearance, effectiveTheme);
       applyTypography(ctx, prefs);
       if (!observer && document.documentElement) {
         observer = new MutationObserver((records) => {
-          const hasPageInsertions = records.some((record) => Array.from(record.addedNodes).some((node) =>
+          const hasPageChanges = records.some((record) => record.type === "attributes" || Array.from(record.addedNodes).some((node) =>
             node instanceof Element && !node.matches("style[data-awl]") && !node.closest("style[data-awl]")));
-          if (!hasPageInsertions || applyTimer) return;
+          if (!hasPageChanges || applyTimer) return;
           applyTimer = setTimeout(() => {
             applyTimer = null;
             // Managed CSS selectors automatically cover new content; refresh region detection after SPA inserts.
             void applyFromStorage();
           }, 120);
         });
-        observer.observe(document.documentElement, { childList: true, subtree: true });
+        observer.observe(document.documentElement, {
+          childList: true,
+          subtree: true,
+          attributes: true,
+          attributeFilter: ["class", "data-theme", "data-color-scheme", "data-dark-mode"],
+        });
       }
       console.debug("[AWL] apply_ms", Math.round((performance.now() - started) * 100) / 100);
     } catch (err) {
@@ -76,6 +90,8 @@ if (isRestrictedPage()) {
 
   // Apply immediately; also re-apply when storage changes
   void applyFromStorage();
+  window.addEventListener("DOMContentLoaded", () => { void applyFromStorage(); }, { once: true });
+  window.addEventListener("load", () => { void applyFromStorage(); }, { once: true });
 
   onSettingsChange(() => {
     hostname = window.location.hostname;
@@ -131,13 +147,19 @@ if (isRestrictedPage()) {
       return false;
     }
 
+    if (msg.type === "GET_APPEARANCE_STATUS") {
+      const status = detectExistingDark();
+      sendResponse({ type: "APPEARANCE_STATUS", ...status });
+      return false;
+    }
+
     if (msg.type === "UNDO_PAGE") {
       sendResponse({ type: "ACK", ok: undoTypography(makeCtx(false)) });
       return false;
     }
 
     if (msg.type === "RESET_PAGE") {
-      resetPage();
+      resetPageAll();
       sendResponse({ type: "ACK", ok: true });
       return false;
     }

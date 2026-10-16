@@ -4,7 +4,7 @@
 
 import { parseMessage } from "../shared/messages";
 import { loadSettings, onSettingsChange } from "../shared/storage";
-import { isSiteEnabled, resolveTypography } from "../shared/settings";
+import { isSiteEnabled, resolveAppearance, resolveTypography } from "../shared/settings";
 
 console.log("[AWL background] service worker started");
 
@@ -14,7 +14,9 @@ async function refreshBadge(tabId: number, url?: string): Promise<void> {
     const hostname = new URL(url).hostname;
     const settings = await loadSettings();
     const defaults: Record<string, unknown> = { fontFamily: "", fontSize: 16, lineHeight: 1.5, letterSpacing: 0, wordSpacing: 0, paragraphSpacing: 0, maxContentWidth: 800 };
-    const active = isSiteEnabled(settings, hostname) && Object.entries(resolveTypography(settings, hostname)).some(([key, value]) => value !== defaults[key]);
+    const appearance = resolveAppearance(settings, hostname);
+    const appearanceActive = appearance.theme !== "light" || appearance.contrast !== 1 || appearance.brightness !== 1 || appearance.saturation !== 1;
+    const active = isSiteEnabled(settings, hostname) && (appearanceActive || Object.entries(resolveTypography(settings, hostname)).some(([key, value]) => value !== defaults[key]));
     void chrome.action.setBadgeText({ tabId, text: active ? "ON" : "" });
     void chrome.action.setBadgeBackgroundColor({ tabId, color: "#4f46e5" });
   } catch { void chrome.action.setBadgeText({ tabId, text: "" }); }

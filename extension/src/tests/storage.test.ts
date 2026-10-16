@@ -24,9 +24,13 @@ describe("settings storage", () => {
   it("persists validated settings and reloads them", async () => {
     const settings = defaultSettings();
     settings.global.typography.fontSize = 24;
+    settings.siteRules = [{ hostname: "example.com", enabled: true, includeSubdomains: false, profileId: null, disabledOperations: [], typography: {}, appearance: { theme: "dark", forceDark: true } }];
 
     expect(await saveSettings(settings)).toBe(true);
-    expect((await loadSettings()).global.typography.fontSize).toBe(24);
+    const loaded = await loadSettings();
+    expect(loaded.global.typography.fontSize).toBe(24);
+    expect(loaded.siteRules[0]?.appearance.theme).toBe("dark");
+    expect(loaded.siteRules[0]?.appearance.forceDark).toBe(true);
   });
 
   it("rejects invalid writes without touching storage", async () => {

@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import type { TypographyPrefs } from "../shared/settings";
 import { TypographyPrefsSchema } from "../shared/settings";
+import { AppearancePrefsSchema, type AppearancePrefs } from "../shared/settings";
 import { loadSettings, saveSettings } from "../shared/storage";
 import { FONT_OPTIONS } from "../content/typographyOps";
 
@@ -219,6 +220,35 @@ export default function AppearanceTab(): React.ReactElement {
           </p>
         </div>
       </div>
+
+      <GlobalAppearanceControls />
     </div>
   );
+}
+
+function GlobalAppearanceControls(): React.ReactElement {
+  const [appearance, setAppearance] = useState<AppearancePrefs>(AppearancePrefsSchema.parse({}));
+  const [savedAppearance, setSavedAppearance] = useState(false);
+  useEffect(() => { void loadSettings().then((settings) => setAppearance(settings.global.appearance)); }, []);
+  const updateAppearance = (patch: Partial<AppearancePrefs>) => {
+    const nextAppearance = { ...appearance, ...patch };
+    setAppearance(nextAppearance);
+    setSavedAppearance(false);
+    void loadSettings().then((settings) => saveSettings({ ...settings, global: { ...settings.global, appearance: nextAppearance } })).then(setSavedAppearance);
+  };
+  return (
+    <div className="opt-section appearance-settings">
+      <h3 className="opt-section-title">Appearance</h3>
+      <p className="opt-section-note">Global appearance applies unless a profile or site rule overrides it.</p>
+      <label className="opt-row">Theme<select className="opt-select" value={appearance.theme} onChange={(event) => updateAppearance({ theme: event.target.value as AppearancePrefs["theme"] })}><option value="light">Light</option><option value="dark">Dark</option><option value="sepia">Sepia / warm</option></select></label>
+      <AppearanceRange label="Contrast" value={appearance.contrast} min={0.5} max={2} onChange={(value) => updateAppearance({ contrast: value })} />
+      <AppearanceRange label="Brightness" value={appearance.brightness} min={0.5} max={1.5} onChange={(value) => updateAppearance({ brightness: value })} />
+      <AppearanceRange label="Saturation (0 = grayscale)" value={appearance.saturation} min={0} max={2} onChange={(value) => updateAppearance({ saturation: value })} />
+      {savedAppearance && <span className="opt-saved">✓ Saved</span>}
+    </div>
+  );
+}
+
+function AppearanceRange({ label, value, min, max, onChange }: { label: string; value: number; min: number; max: number; onChange(value: number): void }): React.ReactElement {
+  return <label className="opt-row"><span className="opt-label">{label}<span className="opt-value">{value.toFixed(1)}</span></span><input className="opt-slider" type="range" min={min} max={max} step={0.1} value={value} onChange={(event) => onChange(Number(event.target.value))} /></label>;
 }

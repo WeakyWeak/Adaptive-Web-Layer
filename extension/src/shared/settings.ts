@@ -2,7 +2,7 @@ import { z } from "zod";
 
 // ─── Schema version ──────────────────────────────────────────────────────────
 // Bump this when you add a migration below.
-export const SETTINGS_VERSION = 2;
+export const SETTINGS_VERSION = 3;
 
 // ─── Typography preferences ──────────────────────────────────────────────────
 export const FONT_FAMILY_OPTIONS = [
@@ -25,9 +25,19 @@ export const TypographyPrefsSchema = z.object({
 });
 export type TypographyPrefs = z.infer<typeof TypographyPrefsSchema>;
 
+export const AppearancePrefsSchema = z.object({
+  theme: z.enum(["light", "dark", "sepia"]).default("light"),
+  contrast: z.number().min(0.5).max(2).default(1),
+  brightness: z.number().min(0.5).max(1.5).default(1),
+  saturation: z.number().min(0).max(2).default(1),
+  forceDark: z.boolean().default(false),
+});
+export type AppearancePrefs = z.infer<typeof AppearancePrefsSchema>;
+
 // ─── Global preferences ──────────────────────────────────────────────────────
 export const GlobalPrefsSchema = z.object({
   typography: TypographyPrefsSchema.default({}),
+  appearance: AppearancePrefsSchema.default({}),
   applyToWholePage: z.boolean().default(false),
 });
 export type GlobalPrefs = z.infer<typeof GlobalPrefsSchema>;
@@ -37,6 +47,7 @@ export const NamedProfileSchema = z.object({
   id: z.string(),
   name: z.string(),
   typography: TypographyPrefsSchema.default({}),
+  appearance: AppearancePrefsSchema.default({}),
   builtIn: z.boolean().default(false),
 });
 export type NamedProfile = z.infer<typeof NamedProfileSchema>;
@@ -49,6 +60,7 @@ export const SiteRuleSchema = z.object({
   profileId: z.string().nullable().default(null),
   disabledOperations: z.array(z.string()).default([]),
   typography: TypographyPrefsSchema.partial().default({}),
+  appearance: AppearancePrefsSchema.partial().default({}),
 });
 export type SiteRule = z.infer<typeof SiteRuleSchema>;
 
@@ -93,10 +105,10 @@ export function normalizeHostname(hostname: string): string {
 }
 
 export const BUILT_IN_PROFILES: NamedProfile[] = [
-  { id: "study", name: "Study", builtIn: true, typography: TypographyPrefsSchema.parse({ fontFamily: "Atkinson Hyperlegible", fontSize: 18, lineHeight: 1.8, maxContentWidth: 900 }) },
-  { id: "night", name: "Night", builtIn: true, typography: TypographyPrefsSchema.parse({ fontFamily: "Lexend", fontSize: 17, lineHeight: 1.7, maxContentWidth: 1000 }) },
-  { id: "minimal", name: "Minimal", builtIn: true, typography: TypographyPrefsSchema.parse({ fontSize: 16, lineHeight: 1.5, maxContentWidth: 800 }) },
-  { id: "research", name: "Research", builtIn: true, typography: TypographyPrefsSchema.parse({ fontFamily: "Georgia", fontSize: 17, lineHeight: 1.75, maxContentWidth: 1100 }) },
+  { id: "study", name: "Study", builtIn: true, typography: TypographyPrefsSchema.parse({ fontFamily: "Atkinson Hyperlegible", fontSize: 18, lineHeight: 1.8, maxContentWidth: 900 }), appearance: AppearancePrefsSchema.parse({ theme: "sepia" }) },
+  { id: "night", name: "Night", builtIn: true, typography: TypographyPrefsSchema.parse({ fontFamily: "Lexend", fontSize: 17, lineHeight: 1.7, maxContentWidth: 1000 }), appearance: AppearancePrefsSchema.parse({ theme: "dark" }) },
+  { id: "minimal", name: "Minimal", builtIn: true, typography: TypographyPrefsSchema.parse({ fontSize: 16, lineHeight: 1.5, maxContentWidth: 800 }), appearance: AppearancePrefsSchema.parse({}) },
+  { id: "research", name: "Research", builtIn: true, typography: TypographyPrefsSchema.parse({ fontFamily: "Georgia", fontSize: 17, lineHeight: 1.75, maxContentWidth: 1100 }), appearance: AppearancePrefsSchema.parse({}) },
 ];
 
 // ─── Resolved typography for a hostname ──────────────────────────────────────
@@ -136,6 +148,20 @@ export function resolveTypography(
   return resolved;
 }
 
+export function resolveAppearance(settings: Settings, hostname: string): AppearancePrefs {
+  const base = AppearancePrefsSchema.parse({});
+  if (!settings.enabled || !isSiteEnabled(settings, hostname)) return base;
+  const site = matchingSiteRule(settings, hostname);
+  const profileId = site?.profileId ?? settings.activeProfileId;
+  const profile = settings.profiles.find((item) => item.id === profileId);
+  return {
+    ...base,
+    ...settings.global.appearance,
+    ...(profile?.appearance ?? {}),
+    ...(site?.appearance ?? {}),
+  };
+}
+
 // ─── Is site enabled? ────────────────────────────────────────────────────────
 export function isSiteEnabled(settings: Settings, hostname: string): boolean {
   if (!settings.enabled) return false;
@@ -167,6 +193,11 @@ export function migrateSettings(raw: Record<string, unknown>): Settings {
   }
 
   data["version"] = SETTINGS_VERSION;
-  if (!Array.isArray(data["profiles"]) || data["profiles"].length === 0) data["profiles"] = BUILT_IN_PROFILES;
+  const storedProfiles = Array.isArray(data["profiles"]) ? data["profiles"] as NamedProfile[] : [];
+  const builtIns = BUILT_IN_PROFILES.map((preset) => {
+    const stored = storedProfiles.find((profile) => profile.id === preset.id);
+    return stored ? { ...preset, ...stored, builtIn: true, appearance: { ...preset.appearance, ...stored.appearance } } : preset;
+  });
+  data["profiles"] = [...builtIns, ...storedProfiles.filter((profile) => !BUILT_IN_PROFILES.some((preset) => preset.id === profile.id))];
   return SettingsSchema.parse(data);
 }

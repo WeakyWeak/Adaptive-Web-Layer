@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en" class="dark" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark" />
+  <title>Native Dark Theme Fixture</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #17191f; color: #e6e8ed; font: 16px/1.65 system-ui, sans-serif; }
+    header { position: sticky; top: 0; z-index: 10; padding: 14px 24px; background: #232631; border-bottom: 1px solid #373b48; }
+    main { max-width: 850px; margin: 28px auto; padding: 28px; background: #20232c; border-radius: 12px; }
+    a { color: #8bb8ff; }
+    pre { overflow: auto; padding: 16px; background: #101217; border: 1px solid #343845; border-radius: 8px; color: #d1d5e0; }
+    .chart { display: inline-flex; gap: 6px; align-items: end; height: 120px; padding: 12px; background: linear-gradient(135deg, #27364d, #152238); border-radius: 8px; }
+    .chart i { display: block; width: 24px; background: #65d6a5; border-radius: 3px 3px 0 0; }
+    .chart i:nth-child(1) { height: 35%; } .chart i:nth-child(2) { height: 80%; }
+    .chart i:nth-child(3) { height: 55%; } .chart i:nth-child(4) { height: 100%; background: #f3bc62; }
+    .fixed-note { position: fixed; right: 16px; bottom: 16px; padding: 10px 14px; background: #303543; border-radius: 8px; }
+  </style>
+</head>
+<body>
+  <header><strong>Native dark documentation</strong> · sticky header test</header>
+  <main>
+    <h1>Already-dark site</h1>
+    <p>This page has a dark class, a dark color-scheme declaration, and dark root backgrounds. The extension should detect it and leave it unchanged unless dark mode is forced.</p>
+    <p>Read the <a href="#details">contrast notes</a> and compare this chart and code sample.</p>
+    <div class="chart" role="img" aria-label="Four color bars"><i></i><i></i><i></i><i></i></div>
+    <pre><code>const theme = "dark";
+console.log(`preserved syntax colors: ${theme}`);</code></pre>
+    <h2 id="details">Long page scroll check</h2>
+    <p>Scroll this fixture to confirm the sticky header remains attached to the top of the viewport.</p>
+    <div style="height: 900px"></div>
+  </main>
+  <div class="fixed-note">Fixed position check</div>
+</body>
+</html>
