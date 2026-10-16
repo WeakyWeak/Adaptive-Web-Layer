@@ -71,6 +71,7 @@ export const GetAppearanceStatusSchema = z.object({ type: z.literal("GET_APPEARA
 export const AppearanceStatusSchema = z.object({
   type: z.literal("APPEARANCE_STATUS"),
   alreadyDark: z.boolean(),
+  explicitDark: z.boolean(),
   signals: z.array(z.string()),
 });
 

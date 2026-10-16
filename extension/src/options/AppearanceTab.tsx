@@ -241,6 +241,7 @@ function GlobalAppearanceControls(): React.ReactElement {
       <h3 className="opt-section-title">Appearance</h3>
       <p className="opt-section-note">Global appearance applies unless a profile or site rule overrides it.</p>
       <label className="opt-row">Theme<select className="opt-select" value={appearance.theme} onChange={(event) => updateAppearance({ theme: event.target.value as AppearancePrefs["theme"] })}><option value="light">Light</option><option value="dark">Dark</option><option value="sepia">Sepia / warm</option></select></label>
+      <label className="opt-row">Appearance engine<select className="opt-select" value={appearance.engine} onChange={(event) => updateAppearance({ engine: event.target.value as AppearancePrefs["engine"] })}><option value="fast">Fast</option><option value="smart">Smart</option></select></label>
       <AppearanceRange label="Contrast" value={appearance.contrast} min={0.5} max={2} onChange={(value) => updateAppearance({ contrast: value })} />
       <AppearanceRange label="Brightness" value={appearance.brightness} min={0.5} max={1.5} onChange={(value) => updateAppearance({ brightness: value })} />
       <AppearanceRange label="Saturation (0 = grayscale)" value={appearance.saturation} min={0} max={2} onChange={(value) => updateAppearance({ saturation: value })} />

@@ -13,7 +13,9 @@ const server = createServer((request, response) => {
     return;
   }
 
-  const filePath = resolve(fixtureRoot, `.${pathname}`);
+  // Accept both documented root URLs and workspace-relative fixture URLs.
+  const fixturePath = pathname.startsWith("/fixtures/") ? pathname.slice("/fixtures".length) : pathname;
+  const filePath = resolve(fixtureRoot, `.${fixturePath === "/" ? "/docs-bright.html" : fixturePath}`);
   if (filePath !== fixtureRoot && !filePath.startsWith(`${fixtureRoot}${sep}`)) {
     response.writeHead(403).end("Forbidden");
     return;
@@ -30,6 +32,7 @@ const server = createServer((request, response) => {
   });
 });
 
-server.listen(4173, "127.0.0.1", () => {
-  console.log("Fixtures available at http://localhost:4173");
+const port = Number(process.env.FIXTURE_PORT ?? 4173);
+server.listen(port, "127.0.0.1", () => {
+  console.log(`Fixtures available at http://localhost:${port}`);
 });

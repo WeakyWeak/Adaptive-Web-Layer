@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyDarkSignals, detectExistingDark } from "../content/darkDetection";
+import { classifyDarkSignals, detectExistingDark, shouldSkipDarkTheme } from "../content/darkDetection";
 
 describe("dark page signal classification", () => {
   it("recognizes explicit dark classes and color-scheme declarations", () => {
@@ -8,9 +8,23 @@ describe("dark page signal classification", () => {
     expect(classifyDarkSignals({ darkClass: false, metaSchemeDark: false, cssSchemeDark: true, prefersDark: false, backgroundDark: false }).alreadyDark).toBe(true);
   });
 
-  it("uses dark background luminance with the system preference, but not the system preference alone", () => {
+  it("uses dark background luminance regardless of system preference", () => {
     expect(classifyDarkSignals({ darkClass: false, metaSchemeDark: false, cssSchemeDark: false, prefersDark: true, backgroundDark: true }).alreadyDark).toBe(true);
+    expect(classifyDarkSignals({ darkClass: false, metaSchemeDark: false, cssSchemeDark: false, prefersDark: false, backgroundDark: true }).alreadyDark).toBe(true);
     expect(classifyDarkSignals({ darkClass: false, metaSchemeDark: false, cssSchemeDark: false, prefersDark: true, backgroundDark: false }).alreadyDark).toBe(false);
+  });
+
+  it("marks declared dark pages as explicit so Fast cannot double-invert them", () => {
+    expect(classifyDarkSignals({ darkClass: true, metaSchemeDark: false, cssSchemeDark: false, prefersDark: false, backgroundDark: true }).explicitDark).toBe(true);
+    expect(classifyDarkSignals({ darkClass: false, metaSchemeDark: false, cssSchemeDark: false, prefersDark: false, backgroundDark: true }).explicitDark).toBe(false);
+  });
+
+  it("skips an existing dark page only when Dark is the requested theme", () => {
+    const status = classifyDarkSignals({ darkClass: true, metaSchemeDark: false, cssSchemeDark: false, prefersDark: false, backgroundDark: true });
+    expect(shouldSkipDarkTheme("dark", status, false)).toBe(true);
+    expect(shouldSkipDarkTheme("dark", status, true)).toBe(true);
+    expect(shouldSkipDarkTheme("light", status, false)).toBe(false);
+    expect(shouldSkipDarkTheme("sepia", status, false)).toBe(false);
   });
 
   it("does not treat a bright page as dark", () => {

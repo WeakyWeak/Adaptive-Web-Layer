@@ -36,10 +36,12 @@ npm run fixtures
 
 Pages:
 - http://localhost:4173/docs-bright.html — bright technical docs
+- http://localhost:4173/fixtures/docs-bright.html — same page from the repository-relative fixture path
 - http://localhost:4173/article-sidebars.html — article with distracting sidebars
 - http://localhost:4173/dashboard-dense.html — dense dashboard tables
 - http://localhost:4173/code-highlight.html — syntax-highlighted code
 - http://localhost:4173/responsive-dynamic.html — responsive + dynamic JS content
+- http://localhost:4173/native-dark.html — native dark theme and fixed/sticky controls
 
 ## Run Tests
 

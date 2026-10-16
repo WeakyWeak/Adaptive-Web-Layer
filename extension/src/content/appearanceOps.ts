@@ -2,14 +2,13 @@ import { z } from "zod";
 import { registerOperation, type ApplyContext, type ApplyResult, type Operation, type Revert } from "../shared/registry";
 import { AppearancePrefsSchema } from "../shared/settings";
 import type { AppearancePrefs } from "../shared/settings";
+import { APPEARANCE_PRESERVE_SELECTOR } from "./appearancePreserve";
+import { buildSmartPalette } from "./smartPalette";
 
-export const APPEARANCE_PRESERVE_SELECTOR = [
-  "img", "picture", "video", "canvas", "svg", "iframe", "pre", "code", "kbd", "samp",
-  "input", "textarea", "select", "button", "[data-awl-preserve]",
-].join(", ");
+export { APPEARANCE_PRESERVE_SELECTOR } from "./appearancePreserve";
 const REINVERT_SELECTOR = ["img", "video", "canvas", "svg", "iframe", "pre", "code:not(pre code)", "kbd:not(pre kbd)", "samp:not(pre samp)", "input", "textarea", "select", "button", "[data-awl-preserve]"].join(", ");
 
-const filterChain = "filter: var(--awl-theme-filter, none) contrast(var(--awl-contrast, 1)) brightness(var(--awl-brightness, 1)) saturate(var(--awl-saturation, 1)) !important;";
+const adjustmentFilters = "contrast(var(--awl-contrast, 1)) brightness(var(--awl-brightness, 1)) saturate(var(--awl-saturation, 1))";
 
 function applyCss(ctx: ApplyContext, id: string, css: string | null, restore?: () => void): ApplyResult {
   const previous = ctx.styleLayer.get(id);
@@ -39,7 +38,7 @@ function variableOperation<T extends { value: number }>(
     paramsSchema,
     validate: () => null,
     apply(ctx, params) {
-      const css = params.value === neutral ? null : `:root { --awl-${cssVariable}: ${params.value}${unit}; ${filterChain} }`;
+      const css = params.value === neutral ? null : `:root { --awl-${cssVariable}: ${params.value}${unit} !important; }`;
       return applyCss(ctx, id, css);
     },
   };
@@ -48,7 +47,20 @@ function variableOperation<T extends { value: number }>(
 const ContrastSchema = z.object({ value: z.number().min(0.5).max(2) });
 const BrightnessSchema = z.object({ value: z.number().min(0.5).max(1.5) });
 const SaturationSchema = z.object({ value: z.number().min(0).max(2) });
-const ThemeSchema = z.object({ value: z.enum(["light", "dark", "sepia"]) });
+const ThemeSchema = z.object({
+  value: z.enum(["light", "dark", "sepia"]),
+  engine: z.enum(["fast", "smart"]).optional(),
+  skip: z.boolean().optional(),
+  bodyReady: z.boolean().optional(),
+});
+const AppearanceFilterSchema = z.object({
+  theme: z.enum(["light", "dark", "sepia"]),
+  engine: z.enum(["fast", "smart"]),
+  skip: z.boolean(),
+  contrast: z.number().min(0.5).max(2),
+  brightness: z.number().min(0.5).max(1.5),
+  saturation: z.number().min(0).max(2),
+});
 
 const themeOperation: Operation<z.infer<typeof ThemeSchema>> = {
   id: "theme",
@@ -58,12 +70,15 @@ const themeOperation: Operation<z.infer<typeof ThemeSchema>> = {
   paramsSchema: ThemeSchema,
   validate: () => null,
   apply(ctx, params) {
-    if (params.value === "light") return applyCss(ctx, "theme", null);
-    const themeFilter = params.value === "dark" ? "invert(1) hue-rotate(180deg)" : "none";
-    // Root inversion flips light-scheme browser controls too; controls are then restored by the preserve rule.
-    const colorScheme = "light";
+    const smart = (params.engine ?? "fast") === "smart";
+    const skip = params.skip ?? false;
+    // Fast dark filtering is emitted by the composed filter operation. This rule
+    // only owns theme colors and Smart's direct palette overrides.
+    const colorScheme = skip ? "" : smart && params.value !== "sepia"
+      ? `color-scheme: ${params.value} !important;`
+      : params.value === "dark" ? "color-scheme: light !important;" : "";
     const cssParts = [
-      `:root { --awl-theme-filter: ${themeFilter}; color-scheme: ${colorScheme} !important; ${filterChain} }`,
+      `:root { ${colorScheme} }`,
     ];
     if (params.value === "sepia") {
       cssParts.push("body { background-color: #f3ead7 !important; }");
@@ -72,7 +87,13 @@ const themeOperation: Operation<z.infer<typeof ThemeSchema>> = {
       cssParts.push("body a { color: #755520 !important; }");
     }
     const marked: Array<{ element: Element; prior: string | null }> = [];
-    if (params.value === "dark") {
+    let smartRestore: (() => void) | undefined;
+    if (smart && !skip && params.value !== "sepia" && params.bodyReady && typeof document !== "undefined") {
+      const palette = buildSmartPalette(document, params.value);
+      if (palette.css) cssParts.push(palette.css);
+      smartRestore = palette.restore;
+    }
+    if (params.value === "dark" && !smart && !skip) {
       const selectors: string[] = [];
       if (typeof document !== "undefined") {
         const backgroundElements = Array.from(document.querySelectorAll("body *")).slice(0, 2500).filter((element) => {
@@ -94,12 +115,31 @@ const themeOperation: Operation<z.infer<typeof ThemeSchema>> = {
       if (prior === null) element.removeAttribute("data-awl-bg-target");
       else element.setAttribute("data-awl-bg-target", prior);
     });
-    return applyCss(ctx, "theme", cssParts.join("\n"), restore);
+    return applyCss(ctx, "theme", cssParts.join("\n"), () => { restore(); smartRestore?.(); });
+  },
+};
+
+const appearanceFilterOperation: Operation<z.infer<typeof AppearanceFilterSchema>> = {
+  id: "appearanceFilter",
+  label: "Appearance filter chain",
+  target: "content-region",
+  protectedElements: APPEARANCE_PRESERVE_SELECTOR.split(", "),
+  paramsSchema: AppearanceFilterSchema,
+  validate: () => null,
+  apply(ctx, params) {
+    const fastDark = params.theme === "dark" && params.engine === "fast" && !params.skip;
+    const hasAdjustments = params.contrast !== 1 || params.brightness !== 1 || params.saturation !== 1;
+    // `none` cannot be combined with other filter functions. Build the list here
+    // instead of expanding a `none` custom property before contrast/brightness.
+    const filters = [fastDark ? "invert(1) hue-rotate(180deg)" : "", adjustmentFilters].filter(Boolean).join(" ");
+    const css = fastDark || hasAdjustments ? `:root { filter: ${filters} !important; }` : null;
+    return applyCss(ctx, "appearanceFilter", css);
   },
 };
 
 export const appearanceOperations: Operation<unknown>[] = [
   themeOperation as Operation<unknown>,
+  appearanceFilterOperation as Operation<unknown>,
   variableOperation("contrast", "Contrast", ContrastSchema, "contrast", 1) as Operation<unknown>,
   variableOperation("brightness", "Brightness", BrightnessSchema, "brightness", 1) as Operation<unknown>,
   variableOperation("saturation", "Saturation / grayscale", SaturationSchema, "saturation", 1) as Operation<unknown>,
@@ -109,12 +149,18 @@ export function registerAppearanceOps(): void {
   appearanceOperations.forEach(registerOperation);
 }
 
-export function appearancePlanSteps(prefs: AppearancePrefs, theme = prefs.theme) {
+export function appearancePlanSteps(
+  prefs: AppearancePrefs,
+  theme = prefs.theme,
+  skipTheme = false,
+  bodyReady = typeof document !== "undefined" && Boolean(document.body),
+) {
   return [
-    { opId: "theme", params: { value: theme } },
+    { opId: "theme", params: { value: theme, engine: prefs.engine, skip: skipTheme, bodyReady } },
     { opId: "contrast", params: { value: prefs.contrast } },
     { opId: "brightness", params: { value: prefs.brightness } },
     { opId: "saturation", params: { value: prefs.saturation } },
+    { opId: "appearanceFilter", params: { theme, engine: prefs.engine, skip: skipTheme, contrast: prefs.contrast, brightness: prefs.brightness, saturation: prefs.saturation } },
   ];
 }
 

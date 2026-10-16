@@ -9,7 +9,8 @@ import { appearancePlanSteps } from "./appearanceOps";
 
 // Keep track of the current revert handle so re-applying always does a clean replace
 let _currentRevert: Revert | null = null;
-let _appearanceRevert: Revert | null = null;
+const _appearanceApplied = new Map<string, { signature: string; revert: Revert }>();
+let _appearanceReset: Revert | null = null;
 let _currentPrefs: TypographyPrefs | null = null;
 const _undo: TypographyPrefs[] = [];
 
@@ -71,18 +72,45 @@ export function undoTypography(ctx: ApplyContext): boolean {
 
 export function resetPage(): void { revertTypography(); }
 
-export function applyAppearance(ctx: ApplyContext, prefs: AppearancePrefs, theme = prefs.theme): Revert {
-  _appearanceRevert?.();
-  _appearanceRevert = null;
-  const result = applyPlan(ctx, appearancePlanSteps(prefs, theme));
-  if (result.errors.length) console.warn("[AWL appearance] plan had errors:", result.errors);
-  _appearanceRevert = result.revert;
-  return result.revert;
+export function applyAppearance(ctx: ApplyContext, prefs: AppearancePrefs, theme = prefs.theme, skipTheme = false): Revert {
+  const steps = appearancePlanSteps(prefs, theme, skipTheme);
+  const activeIds = new Set(steps.map(({ opId }) => opId));
+
+  // Re-running the settings loader is common on SPAs. Keep unchanged operations
+  // mounted so Smart markers and palettes do not disappear/reappear on scroll.
+  for (const [id, applied] of [..._appearanceApplied].reverse()) {
+    if (activeIds.has(id)) continue;
+    applied.revert();
+    _appearanceApplied.delete(id);
+  }
+
+  for (const step of steps) {
+    const signature = JSON.stringify(step.params);
+    const current = _appearanceApplied.get(step.opId);
+    if (current?.signature === signature) continue;
+    current?.revert();
+    _appearanceApplied.delete(step.opId);
+
+    const result = applyPlan(ctx, [step]);
+    if (result.errors.length) {
+      console.warn("[AWL appearance] plan had errors:", result.errors);
+      continue;
+    }
+    _appearanceApplied.set(step.opId, { signature, revert: result.revert });
+  }
+
+  if (!_appearanceReset) {
+    _appearanceReset = () => {
+      for (const { revert } of [..._appearanceApplied.values()].reverse()) revert();
+      _appearanceApplied.clear();
+      _appearanceReset = null;
+    };
+  }
+  return _appearanceReset;
 }
 
 export function revertAppearance(): void {
-  _appearanceRevert?.();
-  _appearanceRevert = null;
+  _appearanceReset?.();
 }
 
 export function resetPageAll(): void {

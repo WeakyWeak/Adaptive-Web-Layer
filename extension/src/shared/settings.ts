@@ -2,7 +2,7 @@ import { z } from "zod";
 
 // ─── Schema version ──────────────────────────────────────────────────────────
 // Bump this when you add a migration below.
-export const SETTINGS_VERSION = 3;
+export const SETTINGS_VERSION = 4;
 
 // ─── Typography preferences ──────────────────────────────────────────────────
 export const FONT_FAMILY_OPTIONS = [
@@ -27,6 +27,7 @@ export type TypographyPrefs = z.infer<typeof TypographyPrefsSchema>;
 
 export const AppearancePrefsSchema = z.object({
   theme: z.enum(["light", "dark", "sepia"]).default("light"),
+  engine: z.enum(["fast", "smart"]).default("fast"),
   contrast: z.number().min(0.5).max(2).default(1),
   brightness: z.number().min(0.5).max(1.5).default(1),
   saturation: z.number().min(0).max(2).default(1),
@@ -180,6 +181,7 @@ export function matchingSiteRule(settings: Settings, hostname: string): SiteRule
 // Each fn takes the raw object from storage and returns the migrated object.
 type MigrationFn = (raw: Record<string, unknown>) => Record<string, unknown>;
 const migrations: Record<number, MigrationFn> = {
+  4: (raw) => raw,
   // Example (unused): 1: (raw) => ({ ...raw, newField: "default" }),
 };
 

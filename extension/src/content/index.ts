@@ -5,7 +5,7 @@ import { getStyleLayer } from "./styleLayer";
 import { registerTypographyOps } from "./typographyOps";
 import { applyTypography, applyAppearance, revertTypography, revertAppearance, undoTypography, resetPageAll } from "./applier";
 import { registerAppearanceOps } from "./appearanceOps";
-import { detectExistingDark } from "./darkDetection";
+import { detectExistingDark, shouldSkipDarkTheme } from "./darkDetection";
 import { injectBundledFonts } from "./fontInjector";
 import type { ApplyContext } from "../shared/registry";
 
@@ -59,10 +59,13 @@ if (isRestrictedPage()) {
       const prefs = resolveTypography(settings, hostname);
       const appearance = resolveAppearance(settings, hostname);
       const darkStatus = detectExistingDark();
-      const effectiveTheme = appearance.theme === "dark" && darkStatus.alreadyDark && !appearance.forceDark ? "light" : appearance.theme;
+      // Fast uses inversion, so never invert a page that declares itself dark;
+      // that would turn its existing dark palette light. The force override is
+      // still available for luminance-only detections, which may be false positives.
+      const shouldSkipTheme = shouldSkipDarkTheme(appearance.theme, darkStatus, appearance.forceDark);
       const ctx = makeCtx(settings.global.applyToWholePage);
       // Apply the root theme as soon as storage resolves, before prose-level rules.
-      applyAppearance(ctx, appearance, effectiveTheme);
+      applyAppearance(ctx, appearance, appearance.theme, shouldSkipTheme);
       applyTypography(ctx, prefs);
       if (!observer && document.documentElement) {
         observer = new MutationObserver((records) => {

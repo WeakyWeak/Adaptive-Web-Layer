@@ -97,6 +97,11 @@ describe("defaultSettings", () => {
 });
 
 describe("AppearancePrefsSchema", () => {
+  it("defaults to Fast and accepts the opt-in Smart engine", () => {
+    expect(AppearancePrefsSchema.parse({}).engine).toBe("fast");
+    expect(AppearancePrefsSchema.parse({ engine: "smart" }).engine).toBe("smart");
+  });
+
   it("enforces bounded contrast, brightness, and saturation", () => {
     expect(AppearancePrefsSchema.safeParse({ contrast: 2.1 }).success).toBe(false);
     expect(AppearancePrefsSchema.safeParse({ brightness: 0.4 }).success).toBe(false);
@@ -126,8 +131,9 @@ describe("resolveAppearance", () => {
 
   it("supports a site theme override independently of another site's theme", () => {
     const settings = defaultSettings();
-    settings.siteRules = [{ hostname: "one.example", enabled: true, includeSubdomains: false, profileId: null, disabledOperations: [], typography: {}, appearance: { theme: "dark" } }];
+    settings.siteRules = [{ hostname: "one.example", enabled: true, includeSubdomains: false, profileId: null, disabledOperations: [], typography: {}, appearance: { theme: "dark", engine: "smart" } }];
     expect(resolveAppearance(settings, "one.example").theme).toBe("dark");
+    expect(resolveAppearance(settings, "one.example").engine).toBe("smart");
     expect(resolveAppearance(settings, "two.example").theme).toBe("light");
   });
 });

@@ -87,6 +87,8 @@ body {
 .theme-buttons button { flex: 1; padding: 5px 7px; border: 1px solid #334155; border-radius: 5px; background: transparent; color: #cbd5e1; cursor: pointer; }
 .theme-buttons .theme-selected { background: #4338ca; color: white; }
 .force-dark-option { color: #cbd5e1; font-size: 11px; }
+.appearance-engine { display: flex; align-items: center; justify-content: space-between; color: #cbd5e1; font-size: 11px; }
+.appearance-engine select { background: #1e293b; color: #e2e8f0; border: 1px solid #334155; border-radius: 4px; padding: 4px 7px; }
 .appearance-slider { display: flex; flex-direction: column; gap: 3px; color: #94a3b8; font-size: 11px; }
 .appearance-slider span { display: flex; justify-content: space-between; }
 .appearance-slider strong { color: #a5b4fc; font-weight: 500; }

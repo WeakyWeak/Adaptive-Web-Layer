@@ -2,6 +2,7 @@ import { isDarkCssColor, parseCssColor } from "../lib/color";
 
 export interface DarkDetectionResult {
   alreadyDark: boolean;
+  explicitDark: boolean;
   signals: string[];
 }
 
@@ -13,6 +14,14 @@ export interface DarkSignals {
   backgroundDark: boolean;
 }
 
+export function shouldSkipDarkTheme(
+  theme: "light" | "dark" | "sepia",
+  detection: DarkDetectionResult,
+  forceDark: boolean,
+): boolean {
+  return theme === "dark" && detection.alreadyDark && (!forceDark || detection.explicitDark);
+}
+
 export function classifyDarkSignals(input: DarkSignals): DarkDetectionResult {
   const signals: string[] = [];
   if (input.darkClass) signals.push("dark class or data attribute");
@@ -20,8 +29,10 @@ export function classifyDarkSignals(input: DarkSignals): DarkDetectionResult {
   if (input.cssSchemeDark) signals.push("CSS color-scheme");
   if (input.prefersDark) signals.push("prefers-color-scheme: dark");
   if (input.backgroundDark) signals.push("dark root or body background");
-  const explicit = input.darkClass || input.metaSchemeDark || input.cssSchemeDark;
-  return { alreadyDark: explicit || input.backgroundDark && input.prefersDark, signals };
+  const explicitDark = input.darkClass || input.metaSchemeDark || input.cssSchemeDark;
+  // A dark root/body surface is enough to detect an already-dark site. Tying
+  // this to the OS preference misses dark sites when the user's OS is light.
+  return { alreadyDark: explicitDark || input.backgroundDark, explicitDark, signals };
 }
 
 export function detectExistingDark(doc: Document = document, win: Window = window): DarkDetectionResult {
