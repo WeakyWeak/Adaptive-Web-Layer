@@ -1,7 +1,8 @@
-phases
+phases/
 AGENTS.md
 README-RUNBOOK.md
 SPEC.md
+docs/
 node_modules
 extension/dist
 extension/node_modules
