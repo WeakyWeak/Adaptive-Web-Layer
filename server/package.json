@@ -1,0 +1,6 @@
+{
+  "name": "awl-server",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Local proxy server — added in P06"
+}

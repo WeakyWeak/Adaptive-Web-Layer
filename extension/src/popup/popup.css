@@ -1,0 +1,137 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Popup-specific styles */
+body {
+  margin: 0;
+  padding: 0;
+  min-width: 320px;
+  max-width: 400px;
+  background: #0f172a;
+  color: #e2e8f0;
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+}
+
+.popup-root {
+  display: flex;
+  flex-direction: column;
+  min-height: 200px;
+}
+
+.popup-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, #1e293b, #0f172a);
+  border-bottom: 1px solid #1e293b;
+}
+
+.popup-logo {
+  font-size: 20px;
+  color: #818cf8;
+}
+
+.popup-title {
+  font-weight: 600;
+  font-size: 14px;
+  color: #e2e8f0;
+  letter-spacing: 0.01em;
+}
+
+.popup-status {
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.status-active {
+  background: rgba(34, 197, 94, 0.15);
+  color: #4ade80;
+}
+
+.status-restricted {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+}
+
+.status-loading {
+  background: rgba(99, 102, 241, 0.15);
+  color: #a5b4fc;
+}
+
+.page-info {
+  padding: 2px 0;
+}
+
+.page-hostname {
+  font-size: 13px;
+  color: #94a3b8;
+  font-family: monospace;
+}
+
+.popup-panels {
+  padding: 0 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.panel-item {
+  border: 1px solid #1e293b;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.panel-title {
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  color: #cbd5e1;
+  background: #1e293b;
+  user-select: none;
+}
+
+.panel-body {
+  padding: 8px 12px;
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.popup-footer {
+  margin-top: auto;
+  padding: 10px 16px;
+  border-top: 1px solid #1e293b;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.btn-options {
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: 1px solid #334155;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.btn-options:hover {
+  background: #1e293b;
+  color: #e2e8f0;
+}

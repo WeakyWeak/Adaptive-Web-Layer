@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dashboard – Analytics Overview</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #f0f4f8; color: #2d3748; font-family: "Inter", system-ui, sans-serif; font-size: 13px; }
+    header { background: #1a202c; color: white; padding: 12px 24px; display: flex; justify-content: space-between; align-items: center; }
+    header h1 { font-size: 16px; font-weight: 600; }
+    .content { padding: 24px; }
+    .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+    .kpi-card { background: white; border-radius: 8px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .kpi-label { font-size: 11px; text-transform: uppercase; color: #718096; letter-spacing: 0.06em; margin-bottom: 6px; }
+    .kpi-value { font-size: 28px; font-weight: 700; color: #2d3748; }
+    .kpi-delta { font-size: 11px; margin-top: 4px; }
+    .kpi-delta.up { color: #38a169; }
+    .kpi-delta.down { color: #e53e3e; }
+    .grid-2 { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; margin-bottom: 24px; }
+    .card { background: white; border-radius: 8px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .card-title { font-size: 13px; font-weight: 600; color: #4a5568; margin-bottom: 16px; text-transform: uppercase; letter-spacing: 0.05em; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    thead th { background: #f7fafc; text-align: left; padding: 8px 10px; border-bottom: 2px solid #e2e8f0; font-weight: 600; color: #718096; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; white-space: nowrap; }
+    td { padding: 8px 10px; border-bottom: 1px solid #f0f4f8; white-space: nowrap; }
+    tr:hover td { background: #f7fafc; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 600; }
+    .badge-green { background: #c6f6d5; color: #276749; }
+    .badge-red { background: #fed7d7; color: #9b2c2c; }
+    .badge-yellow { background: #fefcbf; color: #744210; }
+    .badge-blue { background: #bee3f8; color: #2a4365; }
+    .bar-wrap { display: flex; align-items: center; gap: 8px; }
+    .bar { height: 8px; background: #4299e1; border-radius: 4px; }
+    .pagination { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; font-size: 11px; color: #718096; }
+    .btn-sm { padding: 4px 10px; border: 1px solid #e2e8f0; border-radius: 4px; background: white; cursor: pointer; font-size: 11px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Analytics Dashboard</h1>
+    <div style="color:#a0aec0;font-size:12px;">Last updated: 16 Oct 2026, 09:41 UTC</div>
+  </header>
+
+  <div class="content">
+    <div class="kpi-grid">
+      <div class="kpi-card">
+        <div class="kpi-label">Total Revenue</div>
+        <div class="kpi-value">$2.4M</div>
+        <div class="kpi-delta up">↑ 12.4% vs last month</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Active Users</div>
+        <div class="kpi-value">84,219</div>
+        <div class="kpi-delta up">↑ 3,102 new this week</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Churn Rate</div>
+        <div class="kpi-value">2.1%</div>
+        <div class="kpi-delta down">↑ 0.3% vs target</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Avg Session</div>
+        <div class="kpi-value">4m 18s</div>
+        <div class="kpi-delta up">↑ 22s vs last week</div>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-title">Top Campaigns — October 2026</div>
+        <table>
+          <thead>
+            <tr>
+              <th>Campaign</th>
+              <th>Region</th>
+              <th>Impressions</th>
+              <th>Clicks</th>
+              <th>CTR</th>
+              <th>Conv.</th>
+              <th>Revenue</th>
+              <th>ROAS</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>Brand Awareness Q4</td><td>NA</td><td>4,192,031</td><td>84,223</td><td>2.01%</td><td>3,199</td><td>$182,400</td><td>4.2x</td><td><span class="badge badge-green">Active</span></td></tr>
+            <tr><td>Retargeting — Cart</td><td>EU</td><td>921,044</td><td>41,122</td><td>4.46%</td><td>8,221</td><td>$310,022</td><td>7.8x</td><td><span class="badge badge-green">Active</span></td></tr>
+            <tr><td>Prospecting — Mobile</td><td>APAC</td><td>2,041,883</td><td>28,199</td><td>1.38%</td><td>1,099</td><td>$44,100</td><td>1.9x</td><td><span class="badge badge-yellow">Paused</span></td></tr>
+            <tr><td>Seasonal Sale</td><td>NA</td><td>1,822,004</td><td>55,004</td><td>3.02%</td><td>4,872</td><td>$210,400</td><td>5.1x</td><td><span class="badge badge-green">Active</span></td></tr>
+            <tr><td>Cross-sell — Premium</td><td>EU</td><td>499,002</td><td>12,004</td><td>2.40%</td><td>480</td><td>$96,000</td><td>8.0x</td><td><span class="badge badge-green">Active</span></td></tr>
+            <tr><td>Lookalike — High LTV</td><td>LATAM</td><td>782,110</td><td>9,822</td><td>1.26%</td><td>309</td><td>$28,000</td><td>2.2x</td><td><span class="badge badge-red">Ended</span></td></tr>
+            <tr><td>Search — Branded</td><td>Global</td><td>320,441</td><td>88,010</td><td>27.46%</td><td>12,004</td><td>$540,000</td><td>11.2x</td><td><span class="badge badge-green">Active</span></td></tr>
+            <tr><td>Display — Awareness</td><td>NA</td><td>5,002,100</td><td>20,019</td><td>0.40%</td><td>401</td><td>$16,040</td><td>0.8x</td><td><span class="badge badge-red">Review</span></td></tr>
+          </tbody>
+        </table>
+        <div class="pagination">
+          <span>Showing 1–8 of 54 campaigns</span>
+          <div><button class="btn-sm">← Prev</button> &nbsp; <button class="btn-sm">Next →</button></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Traffic Sources</div>
+        <table>
+          <thead><tr><th>Source</th><th>Sessions</th><th>Share</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>Organic Search</td><td>38,402</td>
+              <td><div class="bar-wrap"><div class="bar" style="width:80%"></div>45%</div></td>
+            </tr>
+            <tr>
+              <td>Direct</td><td>22,100</td>
+              <td><div class="bar-wrap"><div class="bar" style="width:46%;background:#9f7aea"></div>26%</div></td>
+            </tr>
+            <tr>
+              <td>Paid Search</td><td>12,004</td>
+              <td><div class="bar-wrap"><div class="bar" style="width:25%;background:#ed8936"></div>14%</div></td>
+            </tr>
+            <tr>
+              <td>Social</td><td>8,221</td>
+              <td><div class="bar-wrap"><div class="bar" style="width:17%;background:#fc8181"></div>9%</div></td>
+            </tr>
+            <tr>
+              <td>Email</td><td>4,100</td>
+              <td><div class="bar-wrap"><div class="bar" style="width:9%;background:#68d391"></div>5%</div></td>
+            </tr>
+            <tr>
+              <td>Referral</td><td>1,800</td>
+              <td><div class="bar-wrap"><div class="bar" style="width:4%;background:#63b3ed"></div>1%</div></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">User Cohort Retention (Last 8 Weeks)</div>
+      <table>
+        <thead>
+          <tr><th>Cohort</th><th>Size</th><th>W1</th><th>W2</th><th>W3</th><th>W4</th><th>W5</th><th>W6</th><th>W7</th><th>W8</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Aug 19</td><td>4,211</td><td>100%</td><td>68%</td><td>52%</td><td>44%</td><td>39%</td><td>36%</td><td>34%</td><td>32%</td></tr>
+          <tr><td>Aug 26</td><td>3,902</td><td>100%</td><td>71%</td><td>55%</td><td>47%</td><td>42%</td><td>38%</td><td>35%</td><td>—</td></tr>
+          <tr><td>Sep 2</td><td>5,140</td><td>100%</td><td>64%</td><td>49%</td><td>41%</td><td>36%</td><td>33%</td><td>—</td><td>—</td></tr>
+          <tr><td>Sep 9</td><td>4,822</td><td>100%</td><td>69%</td><td>53%</td><td>45%</td><td>40%</td><td>—</td><td>—</td><td>—</td></tr>
+          <tr><td>Sep 16</td><td>6,011</td><td>100%</td><td>73%</td><td>57%</td><td>48%</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+          <tr><td>Sep 23</td><td>5,422</td><td>100%</td><td>70%</td><td>54%</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+          <tr><td>Sep 30</td><td>4,988</td><td>100%</td><td>66%</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+          <tr><td>Oct 7</td><td>5,899</td><td>100%</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</body>
+</html>

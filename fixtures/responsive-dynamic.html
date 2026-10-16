@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Responsive – Dynamic Content Demo</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #f8fafc; color: #1e293b; font-family: system-ui, sans-serif; font-size: 15px; line-height: 1.6; }
+    header { background: #6366f1; color: white; padding: 16px 24px; display: flex; align-items: center; gap: 16px; }
+    header h1 { font-size: 18px; font-weight: 700; }
+    .tab-bar { background: white; border-bottom: 1px solid #e2e8f0; padding: 0 24px; display: flex; gap: 4px; }
+    .tab { padding: 12px 20px; background: none; border: none; font-size: 14px; color: #64748b; cursor: pointer; border-bottom: 3px solid transparent; font-family: inherit; }
+    .tab.active { color: #6366f1; border-bottom-color: #6366f1; font-weight: 600; }
+    .view { display: none; padding: 24px; }
+    .view.active { display: block; }
+
+    /* Feed */
+    .feed { max-width: 680px; display: flex; flex-direction: column; gap: 16px; }
+    .card { background: white; border-radius: 12px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+    .card-meta { font-size: 12px; color: #94a3b8; margin-bottom: 8px; }
+    .card h2 { font-size: 17px; font-weight: 700; color: #0f172a; margin-bottom: 8px; }
+    .card p { font-size: 14px; color: #475569; line-height: 1.6; }
+    .card-actions { display: flex; gap: 12px; margin-top: 14px; }
+    .btn { padding: 6px 14px; border-radius: 6px; border: 1px solid #e2e8f0; background: white; font-size: 13px; cursor: pointer; color: #475569; }
+    .btn:hover { background: #f1f5f9; }
+    .btn-primary { background: #6366f1; color: white; border-color: #6366f1; }
+    .btn-primary:hover { background: #4f46e5; }
+    .spinner { width: 28px; height: 28px; border: 3px solid #e2e8f0; border-top-color: #6366f1; border-radius: 50%; animation: spin 0.7s linear infinite; margin: 20px auto; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #load-more { text-align: center; padding: 16px; }
+
+    /* Profile view */
+    .profile-header { display: flex; align-items: center; gap: 20px; margin-bottom: 24px; }
+    .avatar { width: 72px; height: 72px; border-radius: 50%; background: linear-gradient(135deg, #6366f1, #8b5cf6); display: flex; align-items: center; justify-content: center; font-size: 28px; color: white; font-weight: 700; }
+    .profile-meta h2 { font-size: 22px; font-weight: 700; }
+    .profile-meta p { color: #64748b; font-size: 14px; margin-top: 2px; }
+    .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 24px; }
+    .stat { background: white; border-radius: 8px; padding: 16px; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.07); }
+    .stat-value { font-size: 24px; font-weight: 700; color: #6366f1; }
+    .stat-label { font-size: 12px; color: #94a3b8; margin-top: 2px; }
+
+    #route-indicator { position: fixed; top: 16px; right: 16px; background: #1e293b; color: white; padding: 6px 14px; border-radius: 6px; font-size: 12px; font-family: monospace; opacity: 0; transition: opacity 0.4s; }
+    #route-indicator.visible { opacity: 1; }
+  </style>
+</head>
+<body>
+  <header>
+    <svg width="28" height="28" viewBox="0 0 28 28" fill="none"><circle cx="14" cy="14" r="14" fill="rgba(255,255,255,0.2)"/><text x="14" y="19" text-anchor="middle" font-size="16" fill="white">⬡</text></svg>
+    <h1>Responsive Dynamic App</h1>
+  </header>
+
+  <div class="tab-bar">
+    <button class="tab active" data-view="feed" onclick="navigate('feed', this)">Feed</button>
+    <button class="tab" data-view="profile" onclick="navigate('profile', this)">Profile</button>
+    <button class="tab" data-view="notifications" onclick="navigate('notifications', this)">Notifications <span id="notif-badge" style="background:#ef4444;color:white;border-radius:999px;padding:1px 6px;font-size:11px;margin-left:4px;">3</span></button>
+  </div>
+
+  <div id="view-feed" class="view active">
+    <div class="feed" id="feed-container">
+      <!-- Items injected by JS -->
+    </div>
+    <div id="load-more"><div class="spinner"></div></div>
+  </div>
+
+  <div id="view-profile" class="view">
+    <div class="profile-header">
+      <div class="avatar">T</div>
+      <div class="profile-meta">
+        <h2>Tanmay Verma</h2>
+        <p>Product Engineer · MIT Hackathon 2026</p>
+      </div>
+    </div>
+    <div class="stats">
+      <div class="stat"><div class="stat-value">142</div><div class="stat-label">Articles read</div></div>
+      <div class="stat"><div class="stat-value">7</div><div class="stat-label">Active profiles</div></div>
+      <div class="stat"><div class="stat-value">38</div><div class="stat-label">Sites adapted</div></div>
+    </div>
+    <div class="card">
+      <div class="card-meta">Account</div>
+      <h2>Preferences</h2>
+      <p>Your reading preferences are applied automatically across all sites. You can customise them per-site or switch profiles at any time from the extension popup.</p>
+      <div class="card-actions">
+        <button class="btn btn-primary">Edit preferences</button>
+        <button class="btn">Export data</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="view-notifications" class="view">
+    <div class="feed" id="notif-container">
+      <div class="card"><div class="card-meta">2 minutes ago</div><h2>New feature: Focus Mode</h2><p>Focus mode is now available. Try it on any page with distracting sidebars.</p></div>
+      <div class="card"><div class="card-meta">1 hour ago</div><h2>Readability score updated</h2><p>We updated the readability algorithm. Re-run the AI check to see improved suggestions.</p></div>
+      <div class="card"><div class="card-meta">Yesterday</div><h2>Profile synced</h2><p>Your "Study" profile was synced across 3 devices.</p></div>
+    </div>
+  </div>
+
+  <div id="route-indicator">route: /feed</div>
+
+  <script>
+    const ARTICLES = [
+      { id: 1, title: "The Hidden Cost of Every Page Reload", author: "Dev Weekly", time: "10 min ago", body: "When users navigate between pages, browsers discard parsed HTML, computed styles, and JavaScript heap state. Understanding this cost is the first step toward building faster apps." },
+      { id: 2, title: "Why TypeScript's Strict Mode Matters", author: "Type Safety", time: "45 min ago", body: "Turning on strict TypeScript is uncomfortable for about two days and then becomes the best decision you ever made. Here's what each flag actually does and why you want it." },
+      { id: 3, title: "CSS Custom Properties vs. JS State", author: "UI Engineering", time: "2 hours ago", body: "CSS custom properties can hold UI state that would otherwise require JavaScript. But they come with caveats around inheritance and cascade that you should understand before reaching for them." },
+      { id: 4, title: "Designing for Low-Vision Users", author: "Accessibility", time: "5 hours ago", body: "Low-vision users are not blind — they may see a small portion of the screen, or see everything in blur, or have extreme contrast sensitivity. Each case needs different accommodations." },
+      { id: 5, title: "Content Security Policy: A Practical Guide", author: "Web Security", time: "Yesterday", body: "CSP is one of the most powerful defenses against XSS, but also one of the most misunderstood. We walk through every directive with real-world examples." },
+    ];
+
+    let loaded = 0;
+    const BATCH = 2;
+
+    function renderCard(article) {
+      const el = document.createElement("div");
+      el.className = "card";
+      el.id = `article-${article.id}`;
+      el.innerHTML = `
+        <div class="card-meta">${article.author} · ${article.time}</div>
+        <h2>${article.title}</h2>
+        <p>${article.body}</p>
+        <div class="card-actions">
+          <button class="btn btn-primary">Read</button>
+          <button class="btn">Save</button>
+          <button class="btn">Share</button>
+        </div>
+      `;
+      return el;
+    }
+
+    function loadMore() {
+      const container = document.getElementById("feed-container");
+      const batch = ARTICLES.slice(loaded, loaded + BATCH);
+      batch.forEach(a => container.appendChild(renderCard(a)));
+      loaded += batch.length;
+      if (loaded >= ARTICLES.length) {
+        document.getElementById("load-more").innerHTML = "<p style='color:#94a3b8;font-size:13px;padding:16px;'>You're all caught up.</p>";
+      }
+    }
+
+    // Initial load
+    setTimeout(loadMore, 400);
+    // Simulate "more content" after a delay
+    setTimeout(loadMore, 2000);
+
+    function navigate(view, btn) {
+      document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+      document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
+      btn.classList.add("active");
+      document.getElementById(`view-${view}`).classList.add("active");
+
+      // Simulate client-side route change
+      const indicator = document.getElementById("route-indicator");
+      indicator.textContent = `route: /${view}`;
+      indicator.classList.add("visible");
+      setTimeout(() => indicator.classList.remove("visible"), 1800);
+
+      if (view === "notifications") {
+        document.getElementById("notif-badge").style.display = "none";
+      }
+    }
+  </script>
+</body>
+</html>

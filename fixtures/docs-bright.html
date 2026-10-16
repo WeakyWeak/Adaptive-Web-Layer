@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Docs – Bright Technical Documentation</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #ffffff; color: #1a1a1a; font-family: Georgia, serif; font-size: 16px; line-height: 1.7; }
+    .page { display: flex; min-height: 100vh; }
+    nav { width: 240px; background: #f7f7f8; border-right: 1px solid #e5e5e5; padding: 24px 16px; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
+    nav h2 { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #666; margin-bottom: 12px; }
+    nav a { display: block; padding: 5px 8px; color: #333; text-decoration: none; font-size: 14px; border-radius: 4px; }
+    nav a:hover, nav a.active { background: #e8e8ff; color: #4338ca; }
+    main { flex: 1; max-width: 780px; padding: 48px 64px; margin: 0 auto; }
+    h1 { font-size: 36px; font-weight: 800; color: #111; margin-bottom: 8px; }
+    h2 { font-size: 24px; font-weight: 700; color: #1a1a1a; margin-top: 40px; margin-bottom: 12px; border-bottom: 2px solid #e5e5e5; padding-bottom: 6px; }
+    h3 { font-size: 18px; font-weight: 600; color: #333; margin-top: 28px; margin-bottom: 8px; }
+    p { margin-bottom: 16px; color: #222; }
+    code { font-family: "Fira Code", monospace; font-size: 14px; background: #f4f4f5; padding: 2px 6px; border-radius: 3px; color: #c02829; }
+    pre { background: #1e1e2e; color: #cdd6f4; padding: 20px; border-radius: 8px; overflow-x: auto; margin: 20px 0; font-size: 14px; line-height: 1.5; }
+    pre code { background: none; padding: 0; color: inherit; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; background: #dbeafe; color: #1d4ed8; }
+    .note { background: #fffbeb; border-left: 4px solid #f59e0b; padding: 12px 16px; border-radius: 4px; margin: 20px 0; font-size: 14px; }
+    table { width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 14px; }
+    th { background: #f4f4f5; text-align: left; padding: 10px 14px; border: 1px solid #e5e5e5; font-weight: 600; }
+    td { padding: 9px 14px; border: 1px solid #e5e5e5; }
+    tr:nth-child(even) td { background: #fafafa; }
+  </style>
+</head>
+<body>
+<div class="page">
+  <nav>
+    <h2>Contents</h2>
+    <a href="#intro" class="active">Introduction</a>
+    <a href="#installation">Installation</a>
+    <a href="#config">Configuration</a>
+    <a href="#api">API Reference</a>
+    <a href="#examples">Examples</a>
+    <a href="#troubleshooting">Troubleshooting</a>
+  </nav>
+  <main>
+    <h1 id="intro">Technical Documentation</h1>
+    <p><span class="badge">v2.4.0</span> &nbsp; Bright technical docs fixture page — for testing the Adaptive Web Layer extension.</p>
+
+    <h2 id="installation">Installation</h2>
+    <p>Install the package using your preferred package manager:</p>
+    <pre><code>npm install adaptive-web-layer
+# or
+yarn add adaptive-web-layer
+# or
+pnpm add adaptive-web-layer</code></pre>
+
+    <h2 id="config">Configuration</h2>
+    <p>Create a configuration file at the root of your project. The extension reads this file on startup and applies the specified preferences immediately:</p>
+    <pre><code>{
+  "profile": "study",
+  "fontSize": 17,
+  "lineHeight": 1.8,
+  "theme": "light",
+  "siteOverrides": {
+    "news.ycombinator.com": { "fontSize": 14 }
+  }
+}</code></pre>
+    <div class="note">⚠ Note: Site overrides take precedence over the global profile. The resolution order is: defaults → global → named profile → site override.</div>
+
+    <h3>Available options</h3>
+    <table>
+      <thead><tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>fontSize</code></td><td>number (10–48)</td><td>16</td><td>Base font size in px</td></tr>
+        <tr><td><code>lineHeight</code></td><td>number (1–3)</td><td>1.6</td><td>Line height multiplier</td></tr>
+        <tr><td><code>theme</code></td><td>light | dark | sepia</td><td>light</td><td>Color scheme</td></tr>
+        <tr><td><code>fontFamily</code></td><td>string</td><td>system-ui</td><td>CSS font-family value</td></tr>
+        <tr><td><code>maxWidth</code></td><td>number (400–1400)</td><td>780</td><td>Max content width in px</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="api">API Reference</h2>
+    <h3>applyConfig(config)</h3>
+    <p>Applies the given configuration object to the current page. This function is idempotent; calling it multiple times with the same config is safe.</p>
+    <pre><code>import { applyConfig } from 'adaptive-web-layer';
+
+applyConfig({
+  fontSize: 18,
+  lineHeight: 1.9,
+  theme: 'dark'
+});</code></pre>
+
+    <h3>revertAll()</h3>
+    <p>Reverts all applied changes and restores the original page styles. This is equivalent to calling <code>revert()</code> on every active operation.</p>
+
+    <h2 id="examples">Examples</h2>
+    <p>The following example shows how to set up a "Study" profile with large text, generous spacing, and sepia toning for comfortable long-form reading:</p>
+    <pre><code>const studyProfile = {
+  profile: "study",
+  fontSize: 19,
+  lineHeight: 2.0,
+  letterSpacing: 0.02,
+  theme: "sepia",
+  maxWidth: 680,
+  fontFamily: "'Georgia', serif"
+};</code></pre>
+
+    <h2 id="troubleshooting">Troubleshooting</h2>
+    <h3>Extension not applying styles</h3>
+    <p>Check that the extension is enabled for the current site. Open the popup and verify the status badge shows <em>Extension active</em>. If the page is listed under a site override with <code>enabled: false</code>, the extension will not apply any changes.</p>
+    <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Pellentesque habitant morbi tristique senectus et netus et malesuada fames ac turpis egestas. Vestibulum tortor quam, feugiat vitae, ultricies eget, tempor sit amet, ante. Donec eu libero sit amet quam egestas semper. Aenean ultricies mi vitae est. Mauris placerat eleifend leo.</p>
+  </main>
+</div>
+</body>
+</html>

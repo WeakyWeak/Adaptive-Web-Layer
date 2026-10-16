@@ -1,0 +1,44 @@
+{
+  "manifest_version": 3,
+  "name": "Adaptive Web Layer",
+  "version": "0.0.1",
+  "description": "Personalization layer that adapts websites to your reading and appearance preferences.",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "scripting",
+    "tabs",
+    "tts"
+  ],
+  "host_permissions": [
+    "http://localhost:11434/*",
+    "http://localhost:*/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "popup/index.html",
+    "default_title": "Adaptive Web Layer",
+    "default_icon": {
+      "16": "assets/icon16.png",
+      "48": "assets/icon48.png",
+      "128": "assets/icon128.png"
+    }
+  },
+  "options_page": "options/index.html",
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_start",
+      "all_frames": false
+    }
+  ],
+  "icons": {
+    "16": "assets/icon16.png",
+    "48": "assets/icon48.png",
+    "128": "assets/icon128.png"
+  }
+}

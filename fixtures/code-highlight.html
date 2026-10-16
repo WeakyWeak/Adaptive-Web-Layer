@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Code – Syntax Highlighted Examples</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #1e1e2e; color: #cdd6f4; font-family: system-ui, sans-serif; font-size: 15px; line-height: 1.7; }
+    .page { max-width: 900px; margin: 0 auto; padding: 40px 32px; }
+    h1 { font-size: 30px; font-weight: 800; color: #cba6f7; margin-bottom: 8px; }
+    .subtitle { color: #a6adc8; margin-bottom: 40px; font-size: 15px; }
+    h2 { font-size: 20px; font-weight: 700; color: #89b4fa; margin-top: 40px; margin-bottom: 16px; }
+    h3 { font-size: 16px; font-weight: 600; color: #a6e3a1; margin-top: 24px; margin-bottom: 8px; }
+    p { color: #bac2de; margin-bottom: 16px; }
+
+    /* Syntax highlight theme (Catppuccin Mocha) */
+    .code-block { position: relative; background: #181825; border: 1px solid #313244; border-radius: 8px; overflow: hidden; margin: 20px 0; }
+    .code-lang { position: absolute; top: 10px; right: 14px; font-size: 11px; color: #6c7086; font-family: monospace; text-transform: uppercase; letter-spacing: 0.06em; }
+    pre { padding: 20px; overflow-x: auto; font-size: 14px; line-height: 1.6; }
+    code { font-family: "Fira Code", "JetBrains Mono", "Cascadia Code", monospace; }
+    .kw { color: #cba6f7; } /* keyword */
+    .fn { color: #89b4fa; } /* function */
+    .str { color: #a6e3a1; } /* string */
+    .num { color: #fab387; } /* number */
+    .cm { color: #585b70; font-style: italic; } /* comment */
+    .ty { color: #f38ba8; } /* type */
+    .op { color: #89dceb; } /* operator */
+    .prop { color: #f9e2af; } /* property */
+    .punc { color: #cdd6f4; } /* punctuation */
+    .imp { color: #cba6f7; } /* import/keyword */
+  </style>
+</head>
+<body>
+  <div class="page">
+    <h1>Syntax-Highlighted Code</h1>
+    <p class="subtitle">Fixture page for testing that the Adaptive Web Layer correctly preserves code blocks without altering syntax colors, fonts, or whitespace.</p>
+
+    <h2>TypeScript — Zod Schema</h2>
+    <div class="code-block">
+      <span class="code-lang">TypeScript</span>
+      <pre><code><span class="imp">import</span> <span class="punc">{ </span><span class="prop">z</span><span class="punc"> }</span> <span class="imp">from</span> <span class="str">"zod"</span><span class="punc">;</span>
+
+<span class="cm">// Define a message schema with discriminated union</span>
+<span class="kw">const</span> <span class="prop">MessageSchema</span> <span class="op">=</span> <span class="prop">z</span><span class="punc">.</span><span class="fn">discriminatedUnion</span><span class="punc">(</span><span class="str">"type"</span><span class="punc">, [</span>
+  <span class="prop">z</span><span class="punc">.</span><span class="fn">object</span><span class="punc">({</span>
+    <span class="prop">type</span><span class="punc">:</span> <span class="prop">z</span><span class="punc">.</span><span class="fn">literal</span><span class="punc">(</span><span class="str">"GET_PAGE_INFO"</span><span class="punc">),</span>
+  <span class="punc">}),</span>
+  <span class="prop">z</span><span class="punc">.</span><span class="fn">object</span><span class="punc">({</span>
+    <span class="prop">type</span><span class="punc">:</span> <span class="prop">z</span><span class="punc">.</span><span class="fn">literal</span><span class="punc">(</span><span class="str">"PAGE_INFO"</span><span class="punc">),</span>
+    <span class="prop">payload</span><span class="punc">:</span> <span class="prop">z</span><span class="punc">.</span><span class="fn">object</span><span class="punc">({</span>
+      <span class="prop">hostname</span><span class="punc">:</span> <span class="prop">z</span><span class="punc">.</span><span class="fn">string</span><span class="punc">(),</span>
+      <span class="prop">url</span><span class="punc">:</span> <span class="prop">z</span><span class="punc">.</span><span class="fn">string</span><span class="punc">().</span><span class="fn">url</span><span class="punc">(),</span>
+      <span class="prop">title</span><span class="punc">:</span> <span class="prop">z</span><span class="punc">.</span><span class="fn">string</span><span class="punc">(),</span>
+    <span class="punc">}),</span>
+  <span class="punc">}),</span>
+<span class="punc">]);</span>
+
+<span class="kw">type</span> <span class="ty">Message</span> <span class="op">=</span> <span class="prop">z</span><span class="punc">.</span><span class="ty">infer</span><span class="op">&lt;</span><span class="kw">typeof</span> <span class="prop">MessageSchema</span><span class="op">&gt;</span><span class="punc">;</span>
+
+<span class="kw">function</span> <span class="fn">parseMessage</span><span class="punc">(</span><span class="prop">raw</span><span class="punc">:</span> <span class="ty">unknown</span><span class="punc">):</span> <span class="ty">Message</span> <span class="op">|</span> <span class="kw">null</span> <span class="punc">{</span>
+  <span class="kw">const</span> <span class="prop">result</span> <span class="op">=</span> <span class="prop">MessageSchema</span><span class="punc">.</span><span class="fn">safeParse</span><span class="punc">(</span><span class="prop">raw</span><span class="punc">);</span>
+  <span class="kw">return</span> <span class="prop">result</span><span class="punc">.</span><span class="prop">success</span> <span class="op">?</span> <span class="prop">result</span><span class="punc">.</span><span class="prop">data</span> <span class="op">:</span> <span class="kw">null</span><span class="punc">;</span>
+<span class="punc">}</span></code></pre>
+    </div>
+
+    <h2>Python — Data Processing</h2>
+    <div class="code-block">
+      <span class="code-lang">Python</span>
+      <pre><code><span class="imp">from</span> <span class="prop">dataclasses</span> <span class="imp">import</span> <span class="prop">dataclass</span><span class="punc">,</span> <span class="prop">field</span>
+<span class="imp">from</span> <span class="prop">typing</span> <span class="imp">import</span> <span class="ty">Optional</span><span class="punc">,</span> <span class="ty">List</span>
+
+<span class="cm"># Configuration dataclass with validation</span>
+<span class="punc">@</span><span class="prop">dataclass</span>
+<span class="kw">class</span> <span class="ty">ReadingConfig</span><span class="punc">:</span>
+    font_size<span class="punc">:</span> <span class="ty">int</span> <span class="op">=</span> <span class="num">16</span>
+    line_height<span class="punc">:</span> <span class="ty">float</span> <span class="op">=</span> <span class="num">1.6</span>
+    theme<span class="punc">:</span> <span class="ty">str</span> <span class="op">=</span> <span class="str">"light"</span>
+    max_width<span class="punc">:</span> <span class="ty">int</span> <span class="op">=</span> <span class="num">780</span>
+    site_overrides<span class="punc">:</span> <span class="ty">dict</span> <span class="op">=</span> <span class="fn">field</span><span class="punc">(</span>default_factory<span class="op">=</span><span class="ty">dict</span><span class="punc">)</span>
+
+    <span class="kw">def</span> <span class="fn">__post_init__</span><span class="punc">(</span>self<span class="punc">):</span>
+        <span class="kw">assert</span> <span class="num">10</span> <span class="op">&lt;=</span> self<span class="punc">.</span>font_size <span class="op">&lt;=</span> <span class="num">48</span><span class="punc">,</span> <span class="str">f"font_size out of range: {self.font_size}"</span>
+        <span class="kw">assert</span> self<span class="punc">.</span>theme <span class="kw">in</span> <span class="punc">(</span><span class="str">"light"</span><span class="punc">,</span> <span class="str">"dark"</span><span class="punc">,</span> <span class="str">"sepia"</span><span class="punc">)</span>
+
+    <span class="kw">def</span> <span class="fn">resolve_for_site</span><span class="punc">(</span>self<span class="punc">,</span> hostname<span class="punc">:</span> <span class="ty">str</span><span class="punc">)</span> <span class="op">-&gt;</span> <span class="str">"ReadingConfig"</span><span class="punc">:</span>
+        <span class="cm">"""Merge site override on top of global config."""</span>
+        overrides <span class="op">=</span> self<span class="punc">.</span>site_overrides<span class="punc">.</span><span class="fn">get</span><span class="punc">(</span>hostname<span class="punc">,</span> <span class="punc">{})</span>
+        <span class="kw">return</span> <span class="ty">ReadingConfig</span><span class="punc">(</span><span class="op">**</span><span class="punc">{</span><span class="op">**</span>self<span class="punc">.</span><span class="fn">__dict__</span><span class="punc">,</span> <span class="op">**</span>overrides<span class="punc">})</span></code></pre>
+    </div>
+
+    <h2>Rust — Safe String Handling</h2>
+    <div class="code-block">
+      <span class="code-lang">Rust</span>
+      <pre><code><span class="kw">use</span> <span class="prop">std</span><span class="punc">::</span><span class="prop">collections</span><span class="punc">::</span><span class="ty">HashMap</span><span class="punc">;</span>
+
+<span class="cm">/// A registry mapping operation IDs to CSS properties.</span>
+<span class="punc">#[</span><span class="prop">derive</span><span class="punc">(</span><span class="ty">Debug</span><span class="punc">,</span> <span class="ty">Clone</span><span class="punc">)]</span>
+<span class="kw">pub struct</span> <span class="ty">OperationRegistry</span> <span class="punc">{</span>
+    entries<span class="punc">:</span> <span class="ty">HashMap</span><span class="op">&lt;</span><span class="ty">String</span><span class="punc">,</span> <span class="ty">String</span><span class="op">&gt;</span><span class="punc">,</span>
+<span class="punc">}</span>
+
+<span class="kw">impl</span> <span class="ty">OperationRegistry</span> <span class="punc">{</span>
+    <span class="kw">pub fn</span> <span class="fn">new</span><span class="punc">()</span> <span class="op">-&gt;</span> <span class="ty">Self</span> <span class="punc">{</span>
+        <span class="ty">Self</span> <span class="punc">{ entries:</span> <span class="ty">HashMap</span><span class="punc">::</span><span class="fn">new</span><span class="punc">() }</span>
+    <span class="punc">}</span>
+
+    <span class="kw">pub fn</span> <span class="fn">register</span><span class="punc">(&amp;</span><span class="kw">mut</span> self<span class="punc">,</span> id<span class="punc">:</span> <span class="op">&amp;</span><span class="kw">str</span><span class="punc">,</span> css<span class="punc">:</span> <span class="ty">String</span><span class="punc">) {</span>
+        self<span class="punc">.</span>entries<span class="punc">.</span><span class="fn">insert</span><span class="punc">(</span>id<span class="punc">.</span><span class="fn">to_string</span><span class="punc">(),</span> css<span class="punc">);</span>
+    <span class="punc">}</span>
+
+    <span class="kw">pub fn</span> <span class="fn">get</span><span class="punc">(&amp;</span>self<span class="punc">,</span> id<span class="punc">:</span> <span class="op">&amp;</span><span class="kw">str</span><span class="punc">)</span> <span class="op">-&gt;</span> <span class="ty">Option</span><span class="op">&lt;&amp;</span><span class="ty">String</span><span class="op">&gt;</span> <span class="punc">{</span>
+        self<span class="punc">.</span>entries<span class="punc">.</span><span class="fn">get</span><span class="punc">(</span>id<span class="punc">)</span>
+    <span class="punc">}</span>
+<span class="punc">}</span></code></pre>
+    </div>
+
+    <h3>Note on code preservation</h3>
+    <p>The Adaptive Web Layer must never alter font, color, line-height, or letter-spacing inside <code>pre</code>, <code>code</code>, and <code>kbd</code> elements. These are in the protected set of every Operation.</p>
+  </div>
+</body>
+</html>

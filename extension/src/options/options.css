@@ -1,0 +1,100 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  margin: 0;
+  padding: 0;
+  background: #0f172a;
+  color: #e2e8f0;
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  min-height: 100vh;
+}
+
+.options-root {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.options-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 24px;
+  background: #1e293b;
+  border-bottom: 1px solid #334155;
+}
+
+.options-logo {
+  font-size: 24px;
+  color: #818cf8;
+}
+
+.options-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: #e2e8f0;
+  margin: 0;
+}
+
+.options-body {
+  display: flex;
+  flex: 1;
+}
+
+.options-nav {
+  width: 220px;
+  padding: 16px 0;
+  border-right: 1px solid #1e293b;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.nav-tab {
+  text-align: left;
+  padding: 8px 20px;
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  font-size: 13px;
+  cursor: pointer;
+  border-left: 3px solid transparent;
+  transition: all 0.15s;
+}
+
+.nav-tab:hover {
+  background: #1e293b;
+  color: #e2e8f0;
+}
+
+.nav-tab-active {
+  border-left-color: #818cf8;
+  color: #e2e8f0;
+  background: rgba(129, 140, 248, 0.1);
+}
+
+.options-content {
+  flex: 1;
+  padding: 32px;
+}
+
+.tab-panel {
+  max-width: 680px;
+}
+
+.tab-heading {
+  font-size: 20px;
+  font-weight: 700;
+  color: #e2e8f0;
+  margin: 0 0 16px;
+}
+
+.tab-placeholder {
+  color: #64748b;
+  font-size: 14px;
+  line-height: 1.6;
+  font-style: italic;
+}

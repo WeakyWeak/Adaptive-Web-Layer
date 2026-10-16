@@ -2,3 +2,13 @@ phases
 AGENTS.md
 README-RUNBOOK.md
 SPEC.md
+node_modules
+extension/dist
+extension/node_modules
+server/node_modules
+server/.env
+dist
+.env
+*.local
+*.log
+.DS_Store
