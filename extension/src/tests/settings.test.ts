@@ -81,8 +81,14 @@ describe("defaultSettings", () => {
     expect(s.version).toBe(SETTINGS_VERSION);
     expect(s.global.applyToWholePage).toBe(false);
     expect(s.activeProfileId).toBeNull();
+    expect(s.profiles.map((profile) => profile.name)).toEqual(["Study", "Night", "Minimal", "Research"]);
+    expect(s.enabled).toBe(true);
     expect(s.ai.mode).toBe("local");
     expect(s.privacy.cloudConsent).toBe(false);
+  });
+
+  it("rejects malformed settings imports", () => {
+    expect(SettingsSchema.safeParse({ version: 2, global: { typography: { fontSize: 999 } } }).success).toBe(false);
   });
 });
 
@@ -100,6 +106,7 @@ describe("resolveTypography", () => {
     settings.profiles = [{
       id: "study",
       name: "Study",
+      builtIn: false,
       typography: { ...TypographyPrefsSchema.parse({}), fontSize: 18 },
     }];
     settings.activeProfileId = "study";
@@ -113,16 +120,27 @@ describe("resolveTypography", () => {
     settings.profiles = [{
       id: "study",
       name: "Study",
+      builtIn: false,
       typography: { ...TypographyPrefsSchema.parse({}), fontSize: 18 },
     }];
     settings.activeProfileId = "study";
     settings.siteRules = [{
       hostname: "example.com",
       enabled: true,
+      includeSubdomains: false,
+      profileId: null,
+      disabledOperations: [],
       typography: { fontSize: 22 },
     }];
     const resolved = resolveTypography(settings, "example.com");
     expect(resolved.fontSize).toBe(22);
+  });
+
+  it("a site-assigned profile applies when there is no global active profile", () => {
+    const settings = defaultSettings();
+    settings.siteRules = [{ hostname: "example.com", enabled: true, includeSubdomains: false, profileId: "study", disabledOperations: [], typography: {} }];
+    const resolved = resolveTypography(settings, "example.com");
+    expect(resolved.fontSize).toBe(18);
   });
 
   it("site override does not apply to other hostnames", () => {
@@ -131,10 +149,30 @@ describe("resolveTypography", () => {
     settings.siteRules = [{
       hostname: "example.com",
       enabled: true,
+      includeSubdomains: false,
+      profileId: null,
+      disabledOperations: [],
       typography: { fontSize: 22 },
     }];
     const resolved = resolveTypography(settings, "other.com");
     expect(resolved.fontSize).toBe(16);
+  });
+
+  it("normalizes hostnames and only includes subdomains when requested", () => {
+    const settings = defaultSettings();
+    settings.siteRules = [{ hostname: " Example.COM ", enabled: true, includeSubdomains: false, profileId: null, disabledOperations: [], typography: { fontSize: 24 } }];
+    expect(resolveTypography(settings, "example.com").fontSize).toBe(24);
+    expect(resolveTypography(settings, "docs.example.com").fontSize).toBe(16);
+    settings.siteRules[0].includeSubdomains = true;
+    expect(resolveTypography(settings, "docs.example.com").fontSize).toBe(24);
+  });
+
+  it("a disabled site applies no custom typography", () => {
+    const settings = defaultSettings();
+    settings.global.typography.fontSize = 20;
+    settings.siteRules = [{ hostname: "example.com", enabled: false, includeSubdomains: false, profileId: null, disabledOperations: [], typography: {} }];
+    expect(resolveTypography(settings, "example.com").fontSize).toBe(16);
+    expect(resolveTypography(settings, "other.com").fontSize).toBe(20);
   });
 
   it("resolution order: defaults < global < profile < site", () => {
@@ -144,12 +182,16 @@ describe("resolveTypography", () => {
     settings.profiles = [{
       id: "p1",
       name: "P1",
+      builtIn: false,
       typography: { ...TypographyPrefsSchema.parse({}), letterSpacing: 2 },
     }];
     settings.activeProfileId = "p1";
     settings.siteRules = [{
       hostname: "foo.com",
       enabled: true,
+      includeSubdomains: false,
+      profileId: null,
+      disabledOperations: [],
       typography: { letterSpacing: 3 },
     }];
     const resolved = resolveTypography(settings, "foo.com");
@@ -168,13 +210,13 @@ describe("isSiteEnabled", () => {
 
   it("returns false when rule has enabled: false", () => {
     const settings = defaultSettings();
-    settings.siteRules = [{ hostname: "example.com", enabled: false, typography: {} }];
+    settings.siteRules = [{ hostname: "example.com", enabled: false, includeSubdomains: false, profileId: null, disabledOperations: [], typography: {} }];
     expect(isSiteEnabled(settings, "example.com")).toBe(false);
   });
 
   it("returns true when rule has enabled: true", () => {
     const settings = defaultSettings();
-    settings.siteRules = [{ hostname: "example.com", enabled: true, typography: {} }];
+    settings.siteRules = [{ hostname: "example.com", enabled: true, includeSubdomains: false, profileId: null, disabledOperations: [], typography: {} }];
     expect(isSiteEnabled(settings, "example.com")).toBe(true);
   });
 });

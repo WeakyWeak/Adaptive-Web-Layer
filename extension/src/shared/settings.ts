@@ -2,7 +2,7 @@ import { z } from "zod";
 
 // ─── Schema version ──────────────────────────────────────────────────────────
 // Bump this when you add a migration below.
-export const SETTINGS_VERSION = 1;
+export const SETTINGS_VERSION = 2;
 
 // ─── Typography preferences ──────────────────────────────────────────────────
 export const FONT_FAMILY_OPTIONS = [
@@ -37,13 +37,17 @@ export const NamedProfileSchema = z.object({
   id: z.string(),
   name: z.string(),
   typography: TypographyPrefsSchema.default({}),
+  builtIn: z.boolean().default(false),
 });
 export type NamedProfile = z.infer<typeof NamedProfileSchema>;
 
 // ─── Site rule ───────────────────────────────────────────────────────────────
 export const SiteRuleSchema = z.object({
-  hostname: z.string(),
+  hostname: z.string().transform(normalizeHostname),
   enabled: z.boolean().default(true),
+  includeSubdomains: z.boolean().default(false),
+  profileId: z.string().nullable().default(null),
+  disabledOperations: z.array(z.string()).default([]),
   typography: TypographyPrefsSchema.partial().default({}),
 });
 export type SiteRule = z.infer<typeof SiteRuleSchema>;
@@ -69,6 +73,7 @@ export type PrivacySettings = z.infer<typeof PrivacySettingsSchema>;
 // ─── Root settings ───────────────────────────────────────────────────────────
 export const SettingsSchema = z.object({
   version: z.number().default(SETTINGS_VERSION),
+  enabled: z.boolean().default(true),
   global: GlobalPrefsSchema.default({}),
   activeProfileId: z.string().nullable().default(null),
   profiles: z.array(NamedProfileSchema).default([]),
@@ -80,8 +85,19 @@ export type Settings = z.infer<typeof SettingsSchema>;
 
 // ─── Defaults helper ─────────────────────────────────────────────────────────
 export function defaultSettings(): Settings {
-  return SettingsSchema.parse({});
+  return SettingsSchema.parse({ profiles: BUILT_IN_PROFILES });
 }
+
+export function normalizeHostname(hostname: string): string {
+  return hostname.trim().toLowerCase().replace(/^\.+|\.+$/g, "");
+}
+
+export const BUILT_IN_PROFILES: NamedProfile[] = [
+  { id: "study", name: "Study", builtIn: true, typography: TypographyPrefsSchema.parse({ fontFamily: "Atkinson Hyperlegible", fontSize: 18, lineHeight: 1.8, maxContentWidth: 900 }) },
+  { id: "night", name: "Night", builtIn: true, typography: TypographyPrefsSchema.parse({ fontFamily: "Lexend", fontSize: 17, lineHeight: 1.7, maxContentWidth: 1000 }) },
+  { id: "minimal", name: "Minimal", builtIn: true, typography: TypographyPrefsSchema.parse({ fontSize: 16, lineHeight: 1.5, maxContentWidth: 800 }) },
+  { id: "research", name: "Research", builtIn: true, typography: TypographyPrefsSchema.parse({ fontFamily: "Georgia", fontSize: 17, lineHeight: 1.75, maxContentWidth: 1100 }) },
+];
 
 // ─── Resolved typography for a hostname ──────────────────────────────────────
 // Resolution order: defaults < global < active profile < site override
@@ -90,22 +106,31 @@ export function resolveTypography(
   hostname: string
 ): TypographyPrefs {
   const base: TypographyPrefs = TypographyPrefsSchema.parse({});
+  if (!settings.enabled || !isSiteEnabled(settings, hostname)) return base;
 
   // Apply global
   let resolved: TypographyPrefs = { ...base, ...settings.global.typography };
 
   // Apply active profile
-  if (settings.activeProfileId) {
-    const profile = settings.profiles.find((p) => p.id === settings.activeProfileId);
+  const profileId = matchingSiteRule(settings, hostname)?.profileId ?? settings.activeProfileId;
+  if (profileId) {
+    const profile = settings.profiles.find((p) => p.id === profileId);
     if (profile) {
       resolved = { ...resolved, ...profile.typography };
     }
   }
 
   // Apply site override (partial)
-  const siteRule = settings.siteRules.find((r) => r.hostname === hostname);
+  const siteRule = matchingSiteRule(settings, hostname);
   if (siteRule?.enabled !== false) {
     resolved = { ...resolved, ...siteRule?.typography };
+    if (siteRule?.disabledOperations.includes("fontFamily")) resolved.fontFamily = "";
+    if (siteRule?.disabledOperations.includes("fontSize")) resolved.fontSize = base.fontSize;
+    if (siteRule?.disabledOperations.includes("lineHeight")) resolved.lineHeight = base.lineHeight;
+    if (siteRule?.disabledOperations.includes("letterSpacing")) resolved.letterSpacing = base.letterSpacing;
+    if (siteRule?.disabledOperations.includes("wordSpacing")) resolved.wordSpacing = base.wordSpacing;
+    if (siteRule?.disabledOperations.includes("paragraphSpacing")) resolved.paragraphSpacing = base.paragraphSpacing;
+    if (siteRule?.disabledOperations.includes("maxContentWidth")) resolved.maxContentWidth = base.maxContentWidth;
   }
 
   return resolved;
@@ -113,8 +138,15 @@ export function resolveTypography(
 
 // ─── Is site enabled? ────────────────────────────────────────────────────────
 export function isSiteEnabled(settings: Settings, hostname: string): boolean {
-  const rule = settings.siteRules.find((r) => r.hostname === hostname);
+  if (!settings.enabled) return false;
+  const rule = matchingSiteRule(settings, hostname);
   return rule?.enabled !== false;
+}
+
+export function matchingSiteRule(settings: Settings, hostname: string): SiteRule | undefined {
+  const normalized = normalizeHostname(hostname);
+  return settings.siteRules.find((rule) => normalized === normalizeHostname(rule.hostname)) ??
+    settings.siteRules.find((rule) => rule.includeSubdomains && normalized.endsWith(`.${normalizeHostname(rule.hostname)}`));
 }
 
 // ─── Migration table ─────────────────────────────────────────────────────────
@@ -135,5 +167,6 @@ export function migrateSettings(raw: Record<string, unknown>): Settings {
   }
 
   data["version"] = SETTINGS_VERSION;
+  if (!Array.isArray(data["profiles"]) || data["profiles"].length === 0) data["profiles"] = BUILT_IN_PROFILES;
   return SettingsSchema.parse(data);
 }

@@ -3,7 +3,7 @@ import { loadSettings, onSettingsChange } from "../shared/storage";
 import { resolveTypography, isSiteEnabled } from "../shared/settings";
 import { getStyleLayer } from "./styleLayer";
 import { registerTypographyOps } from "./typographyOps";
-import { applyTypography, revertTypography } from "./applier";
+import { applyTypography, revertTypography, undoTypography, resetPage } from "./applier";
 import { injectBundledFonts } from "./fontInjector";
 import type { ApplyContext } from "../shared/registry";
 
@@ -32,7 +32,9 @@ if (isRestrictedPage()) {
   const styleLayer = getStyleLayer();
   // Inject bundled fonts so they are available for use
   injectBundledFonts(styleLayer);
-  const hostname = window.location.hostname;
+  let hostname = window.location.hostname;
+  let observer: MutationObserver | null = null;
+  let applyTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Build apply context from current settings
   function makeCtx(applyToWholePage: boolean): ApplyContext {
@@ -42,14 +44,31 @@ if (isRestrictedPage()) {
   // Apply saved settings on load (no AI call, no flash)
   async function applyFromStorage(): Promise<void> {
     try {
+      const started = performance.now();
       const settings = await loadSettings();
       if (!isSiteEnabled(settings, hostname)) {
         revertTypography();
+        observer?.disconnect();
+        observer = null;
         return;
       }
       const prefs = resolveTypography(settings, hostname);
       const ctx = makeCtx(settings.global.applyToWholePage);
       applyTypography(ctx, prefs);
+      if (!observer && document.documentElement) {
+        observer = new MutationObserver((records) => {
+          const hasPageInsertions = records.some((record) => Array.from(record.addedNodes).some((node) =>
+            node instanceof Element && !node.matches("style[data-awl]") && !node.closest("style[data-awl]")));
+          if (!hasPageInsertions || applyTimer) return;
+          applyTimer = setTimeout(() => {
+            applyTimer = null;
+            // Managed CSS selectors automatically cover new content; refresh region detection after SPA inserts.
+            void applyFromStorage();
+          }, 120);
+        });
+        observer.observe(document.documentElement, { childList: true, subtree: true });
+      }
+      console.debug("[AWL] apply_ms", Math.round((performance.now() - started) * 100) / 100);
     } catch (err) {
       console.warn("[AWL content] failed to apply settings:", err);
     }
@@ -58,15 +77,25 @@ if (isRestrictedPage()) {
   // Apply immediately; also re-apply when storage changes
   void applyFromStorage();
 
-  onSettingsChange(async (settings) => {
-    if (!isSiteEnabled(settings, hostname)) {
-      revertTypography();
-      return;
-    }
-    const prefs = resolveTypography(settings, hostname);
-    const ctx = makeCtx(settings.global.applyToWholePage);
-    applyTypography(ctx, prefs);
+  onSettingsChange(() => {
+    hostname = window.location.hostname;
+    void applyFromStorage();
   });
+
+  // SPA navigation: refresh site matching when the URL changes without a document load.
+  const originalPushState = history.pushState.bind(history);
+  history.pushState = ((...args: Parameters<History["pushState"]>) => {
+    originalPushState(...args);
+    hostname = window.location.hostname;
+    void applyFromStorage();
+  }) as History["pushState"];
+  window.addEventListener("popstate", () => { hostname = window.location.hostname; void applyFromStorage(); });
+  window.addEventListener("hashchange", () => { hostname = window.location.hostname; void applyFromStorage(); });
+  window.addEventListener("pagehide", () => {
+    observer?.disconnect();
+    observer = null;
+    if (applyTimer) clearTimeout(applyTimer);
+  }, { once: true });
 
   // ── Message listener ──────────────────────────────────────────────────────
   chrome.runtime.onMessage.addListener((raw, _sender, sendResponse) => {
@@ -98,6 +127,17 @@ if (isRestrictedPage()) {
 
     if (msg.type === "REVERT_TYPOGRAPHY") {
       revertTypography();
+      sendResponse({ type: "ACK", ok: true });
+      return false;
+    }
+
+    if (msg.type === "UNDO_PAGE") {
+      sendResponse({ type: "ACK", ok: undoTypography(makeCtx(false)) });
+      return false;
+    }
+
+    if (msg.type === "RESET_PAGE") {
+      resetPage();
       sendResponse({ type: "ACK", ok: true });
       return false;
     }

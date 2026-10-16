@@ -98,6 +98,10 @@ body {
   line-height: 1.6;
   font-style: italic;
 }
+.profile-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid #334155; flex-wrap: wrap; }
+.op-toggles { display: flex; flex-wrap: wrap; gap: 8px; border: 1px solid #334155; border-radius: 5px; color: #94a3b8; }
+.profile-row input:not([type="checkbox"]), .tab-panel input:not([type="file"]), .tab-panel select { background: #1e293b; border: 1px solid #334155; border-radius: 5px; color: #e2e8f0; padding: 6px; }
+.tab-panel button { margin: 6px; padding: 7px 11px; border: 1px solid #475569; border-radius: 5px; color: #e2e8f0; background: #1e293b; cursor: pointer; }
 
 /* ── Appearance tab ─────────────────────────────────────────────────────────── */
 .appearance-tab {

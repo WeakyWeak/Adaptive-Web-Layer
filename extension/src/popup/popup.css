@@ -73,6 +73,13 @@ body {
   color: #a5b4fc;
 }
 
+.site-toggle { padding: 8px 10px; border: 0; border-radius: 6px; background: #7f1d1d; color: #fee2e2; font-weight: 700; cursor: pointer; }
+.site-reset { align-self: flex-start; padding: 3px 0; background: transparent; border: 0; color: #94a3b8; font-size: 11px; cursor: pointer; }
+.global-toggle, .profile-select { display: flex; align-items: center; gap: 7px; color: #cbd5e1; font-size: 12px; }
+.profile-select select { margin-left: auto; background: #1e293b; color: #e2e8f0; border: 1px solid #334155; border-radius: 4px; padding: 4px; }
+.page-actions { display: flex; gap: 8px; }
+.page-actions button { background: transparent; color: #94a3b8; border: 1px solid #334155; border-radius: 5px; padding: 5px 9px; cursor: pointer; }
+
 .page-info {
   padding: 2px 0;
 }

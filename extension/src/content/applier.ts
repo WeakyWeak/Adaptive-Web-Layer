@@ -8,6 +8,8 @@ import { applyPlan, type ApplyContext, type PlanStep, type Revert } from "../sha
 
 // Keep track of the current revert handle so re-applying always does a clean replace
 let _currentRevert: Revert | null = null;
+let _currentPrefs: TypographyPrefs | null = null;
+const _undo: TypographyPrefs[] = [];
 
 /**
  * Apply a TypographyPrefs object to the page via the registry.
@@ -17,6 +19,8 @@ let _currentRevert: Revert | null = null;
 export function applyTypography(ctx: ApplyContext, prefs: TypographyPrefs): Revert {
   // Revert any previous application first
   if (_currentRevert) {
+    if (_currentPrefs) _undo.push(_currentPrefs);
+    if (_undo.length > 10) _undo.shift();
     _currentRevert();
     _currentRevert = null;
   }
@@ -37,6 +41,7 @@ export function applyTypography(ctx: ApplyContext, prefs: TypographyPrefs): Reve
   }
 
   _currentRevert = result.revert;
+  _currentPrefs = { ...prefs };
   return result.revert;
 }
 
@@ -49,4 +54,17 @@ export function revertTypography(): void {
     _currentRevert();
     _currentRevert = null;
   }
+  _currentPrefs = null;
+  _undo.length = 0;
 }
+
+export function undoTypography(ctx: ApplyContext): boolean {
+  const previous = _undo.pop();
+  if (!previous) return false;
+  if (_currentRevert) _currentRevert();
+  _currentRevert = applyTypography(ctx, previous);
+  _undo.pop();
+  return true;
+}
+
+export function resetPage(): void { revertTypography(); }

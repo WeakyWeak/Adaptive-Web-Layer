@@ -66,6 +66,8 @@ export const RevertTypographySchema = z.object({
 });
 export type RevertTypography = z.infer<typeof RevertTypographySchema>;
 
+export const PageActionSchema = z.object({ type: z.enum(["UNDO_PAGE", "RESET_PAGE"]) });
+
 // ── Generic ack ───────────────────────────────────────────────────────────────
 
 export const AckSchema = z.object({
@@ -84,6 +86,7 @@ export const AnyMessageSchema = z.discriminatedUnion("type", [
   PongResponseSchema,
   ApplyTypographySchema,
   RevertTypographySchema,
+  PageActionSchema,
   AckSchema,
 ]);
 export type AnyMessage = z.infer<typeof AnyMessageSchema>;

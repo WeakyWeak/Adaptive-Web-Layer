@@ -1,0 +1,8 @@
+# Known Limitations
+
+P00: llama-server is present at ~/llama.cpp/build/bin/llama-server; llama-server stays outside the project repo. The extension settings UI (P05) will expose a configurable endpoint URL defaulting to http://localhost:11434. No code in the project references the binary path — only the URL.
+P00: E2e tests require fixtures server to be running separately — not auto-started by `npm run e2e`; see README for the correct command order. This environment cannot bind local sockets or launch Chrome, so browser smoke and manual fixture checks remain unverified here.
+P00: Extension icons are minimal programmatic PNGs — will be replaced with proper branded icons in P10.
+P00-BUG-FIXED: Content script was built as ES module (import statement), causing SyntaxError in Chrome because MV3 content scripts are injected as classic scripts. Fixed by building content.js separately as IIFE via vite.content.config.ts.
+P01: Chrome storage loads asynchronously at document_start, so saved preferences may apply after the browser's first paint. The managed stylesheet is attached as soon as the document head/root exists.
+P02: The content script logs measured settings-to-apply latency as `[AWL] apply_ms <milliseconds>` on each apply. A live fixture timing sample could not be captured: `npm run fixtures` failed with `listen EPERM` on `127.0.0.1:4173`, and `npm run e2e` could not launch Chromium (`SIGTRAP` after a crashpad socket permission error), so no latency number is claimed. Startup timing includes asynchronous `chrome.storage.local` access and can occur after first paint. Added-subtree handling is debounced by 120 ms; managed CSS selectors style inserted descendants once the rule is present.
