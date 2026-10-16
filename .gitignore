@@ -3,6 +3,7 @@ AGENTS.md
 README-RUNBOOK.md
 SPEC.md
 docs/
+qwen/
 node_modules
 extension/dist
 extension/node_modules
