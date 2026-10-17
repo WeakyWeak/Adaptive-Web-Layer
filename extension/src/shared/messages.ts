@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { FONT_FAMILY_OPTIONS } from "./settings";
+import { DomSnapshotSchema, PlanOperationSchema, PlanSchema } from "./plan";
 
 // ─── Typed message protocol (Zod discriminated union) ───────────────────────
 // All messages between popup ↔ content script ↔ background use this schema.
@@ -78,6 +79,71 @@ export const StartElementPickerSchema = z.object({ type: z.literal("START_ELEMEN
 export const GetFocusCandidatesSchema = z.object({ type: z.literal("GET_FOCUS_CANDIDATES") });
 export const FocusCandidatesSchema = z.object({ type: z.literal("FOCUS_CANDIDATES"), candidates: z.array(z.object({ selector: z.string(), label: z.string() })) });
 
+// ── P05: DOM snapshot (content → background) ────────────────────────────────
+export const GetDomSnapshotSchema = z.object({ type: z.literal("GET_DOM_SNAPSHOT") });
+export const DomSnapshotResponseSchema = z.object({
+  type: z.literal("DOM_SNAPSHOT"),
+  payload: DomSnapshotSchema,
+});
+
+// ── P05: NL command (popup → background) ─────────────────────────────────────
+export const NlCommandSchema = z.object({
+  type: z.literal("NL_COMMAND"),
+  request: z.string().min(1).max(1000),
+  /** tabId of the page to snapshot and apply to */
+  tabId: z.number(),
+});
+export type NlCommand = z.infer<typeof NlCommandSchema>;
+
+export const NlCommandResultSchema = z.object({
+  type: z.literal("NL_COMMAND_RESULT"),
+  ok: z.boolean(),
+  /** The validated plan (if ok) */
+  plan: PlanSchema.optional(),
+  /** Human-readable descriptions of each operation */
+  descriptions: z.array(z.string()).optional(),
+  /** Interpreted request string */
+  interpretedRequest: z.string().optional(),
+  /** Confidence score */
+  confidence: z.number().optional(),
+  /** Validation warnings (non-fatal) */
+  warnings: z.array(z.string()).optional(),
+  /** Error message (if !ok) */
+  error: z.string().optional(),
+  /** Error code for typed handling */
+  errorCode: z.string().optional(),
+  /** Hint for the user on how to fix the error */
+  hint: z.string().optional(),
+  /** True if this was a shortcut (no AI call) */
+  shortcut: z.boolean().optional(),
+});
+export type NlCommandResult = z.infer<typeof NlCommandResultSchema>;
+
+// ── P05: Apply / revert NL plan (background → content via popup) ─────────────
+export const ApplyNlPlanSchema = z.object({
+  type: z.literal("APPLY_NL_PLAN"),
+  operations: z.array(PlanOperationSchema),
+  /** If true: temporary preview; if false: committed apply */
+  preview: z.boolean().default(true),
+});
+export type ApplyNlPlan = z.infer<typeof ApplyNlPlanSchema>;
+
+export const RevertNlPlanSchema = z.object({
+  type: z.literal("REVERT_NL_PLAN"),
+});
+
+// ── P05: Provider status (popup → background) ─────────────────────────────────
+export const GetProviderStatusSchema = z.object({ type: z.literal("GET_PROVIDER_STATUS") });
+export const ProviderStatusSchema = z.object({
+  type: z.literal("PROVIDER_STATUS"),
+  ok: z.boolean(),
+  latencyMs: z.number().optional(),
+  modelId: z.string().optional(),
+  error: z.string().optional(),
+  demoMode: z.boolean().default(false),
+});
+export type ProviderStatus = z.infer<typeof ProviderStatusSchema>;
+
 // ── Generic ack ───────────────────────────────────────────────────────────────
 
 export const AckSchema = z.object({
@@ -102,6 +168,15 @@ export const AnyMessageSchema = z.discriminatedUnion("type", [
   StartElementPickerSchema,
   GetFocusCandidatesSchema,
   FocusCandidatesSchema,
+  // P05
+  GetDomSnapshotSchema,
+  DomSnapshotResponseSchema,
+  NlCommandSchema,
+  NlCommandResultSchema,
+  ApplyNlPlanSchema,
+  RevertNlPlanSchema,
+  GetProviderStatusSchema,
+  ProviderStatusSchema,
   AckSchema,
 ]);
 export type AnyMessage = z.infer<typeof AnyMessageSchema>;

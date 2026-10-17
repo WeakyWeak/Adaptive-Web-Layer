@@ -9,7 +9,8 @@ import { detectExistingDark, shouldSkipDarkTheme } from "./darkDetection";
 import { injectBundledFonts } from "./fontInjector";
 import { registerFocusOps } from "./focusOps";
 import { ElementPicker, focusCandidates } from "./elementPicker";
-import type { ApplyContext } from "../shared/registry";
+import { buildDomSnapshot } from "./domSnapshot";
+import { applyPlan, type ApplyContext, type Revert } from "../shared/registry";
 
 // Detect restricted pages (chrome://, chrome-extension://, Web Store, etc.)
 function isRestrictedPage(): boolean {
@@ -43,6 +44,10 @@ if (isRestrictedPage()) {
   let applyTimer: ReturnType<typeof setTimeout> | null = null;
   let currentSettings: Settings | null = null;
   let undoSettings: Settings | null = null;
+  // P05: NL plan revert handle
+  let _nlPlanRevert: Revert | null = null;
+  // Used to track whether current applied NL plan is still preview (P08 agent loop uses this)
+  let _nlPlanIsPreview = false; void _nlPlanIsPreview;
 
   // Build apply context from current settings
   function makeCtx(applyToWholePage: boolean): ApplyContext {
@@ -198,6 +203,54 @@ if (isRestrictedPage()) {
         return saveSettings({ ...settings, siteRules: [...settings.siteRules.filter((item) => item.hostname !== hostname), rule] });
       }).then((ok) => sendResponse({ type: "ACK", ok, error: ok ? undefined : "Could not reset this page" })).catch((error) => sendResponse({ type: "ACK", ok: false, error: String(error) }));
       return true;
+    }
+
+    // ── P05: DOM snapshot ───────────────────────────────────────────────────
+    if (msg.type === "GET_DOM_SNAPSHOT") {
+      void loadSettings().then((settings) => {
+        try {
+          const snapshot = buildDomSnapshot(settings.global.applyToWholePage);
+          sendResponse({ type: "DOM_SNAPSHOT", payload: snapshot });
+        } catch (e) {
+          sendResponse({ type: "ACK", ok: false, error: String(e) });
+        }
+      }).catch((e) => sendResponse({ type: "ACK", ok: false, error: String(e) }));
+      return true; // async
+    }
+
+    // ── P05: Apply NL plan ──────────────────────────────────────────────────
+    if (msg.type === "APPLY_NL_PLAN") {
+      void loadSettings().then((settings) => {
+        try {
+          const ctx = makeCtx(settings.global.applyToWholePage);
+          // Revert any existing NL plan before applying new one
+          if (_nlPlanRevert) {
+            _nlPlanRevert();
+            _nlPlanRevert = null;
+          }
+          const result = applyPlan(ctx, msg.operations.map((op) => ({ opId: op.opId, params: op.params })));
+          if (result.errors.length > 0) {
+            console.warn("[AWL content] NL plan had errors:", result.errors);
+          }
+          _nlPlanRevert = result.revert;
+          _nlPlanIsPreview = msg.preview;
+          sendResponse({ type: "ACK", ok: true, error: result.errors.join(" | ") || undefined });
+        } catch (e) {
+          sendResponse({ type: "ACK", ok: false, error: String(e) });
+        }
+      }).catch((e) => sendResponse({ type: "ACK", ok: false, error: String(e) }));
+      return true; // async
+    }
+
+    // ── P05: Revert NL plan ─────────────────────────────────────────────────
+    if (msg.type === "REVERT_NL_PLAN") {
+      if (_nlPlanRevert) {
+        _nlPlanRevert();
+        _nlPlanRevert = null;
+        _nlPlanIsPreview = false;
+      }
+      sendResponse({ type: "ACK", ok: true });
+      return false;
     }
 
     return false;

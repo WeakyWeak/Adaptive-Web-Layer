@@ -2,7 +2,7 @@ import { z } from "zod";
 
 // ─── Schema version ──────────────────────────────────────────────────────────
 // Bump this when you add a migration below.
-export const SETTINGS_VERSION = 5;
+export const SETTINGS_VERSION = 6;
 
 // ─── Typography preferences ──────────────────────────────────────────────────
 export const FONT_FAMILY_OPTIONS = [
@@ -87,14 +87,18 @@ export const SiteRuleSchema = z.object({
 });
 export type SiteRule = z.infer<typeof SiteRuleSchema>;
 
-// ─── AI settings (placeholder; real values added in P05/P06) ─────────────────
+// ─── AI settings (P05+) ───────────────────────────────────────────────────────
 export const AiSettingsSchema = z.object({
   mode: z.enum(["local", "cloud", "hybrid"]).default("local"),
-  localEndpoint: z.string().default("http://localhost:11434"),
+  // llama-server default port is 8080; Ollama uses 11434 with /v1 endpoint
+  localEndpoint: z.string().default("http://127.0.0.1:8080"),
   localModel: z.string().default("qwen2.5-coder:7b"),
   localContextSize: z.number().min(512).max(131072).default(8192),
+  localApiKey: z.string().default(""),
+  localTimeoutMs: z.number().min(1000).max(120000).default(30000),
   cloudModel: z.string().default(""),
   cloudEnabled: z.boolean().default(false),
+  demoMode: z.boolean().default(false),
 });
 export type AiSettings = z.infer<typeof AiSettingsSchema>;
 
@@ -214,6 +218,7 @@ export function matchingSiteRule(settings: Settings, hostname: string): SiteRule
 // Each fn takes the raw object from storage and returns the migrated object.
 type MigrationFn = (raw: Record<string, unknown>) => Record<string, unknown>;
 const migrations: Record<number, MigrationFn> = {
+  6: (raw) => raw, // AI settings fields added with defaults
   5: (raw) => raw,
   4: (raw) => raw,
   // Example (unused): 1: (raw) => ({ ...raw, newField: "default" }),

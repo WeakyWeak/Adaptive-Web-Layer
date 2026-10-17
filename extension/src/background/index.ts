@@ -3,8 +3,11 @@
 // All state must be persisted in chrome.storage, never held in memory.
 
 import { parseMessage } from "../shared/messages";
-import { loadSettings, onSettingsChange } from "../shared/storage";
-import { isSiteEnabled, resolveAppearance, resolveTypography } from "../shared/settings";
+import { loadSettings, onSettingsChange, saveSettings } from "../shared/storage";
+import { isSiteEnabled, resolveAppearance, resolveTypography, type Settings } from "../shared/settings";
+import { LocalOpenAICompatProvider, MockProvider } from "../shared/llmProvider";
+import { runPlanner, describeOperations } from "./planner";
+import { detectShortcut, ProviderError, formatProviderError } from "../shared/plan";
 
 console.log("[AWL background] service worker started");
 
@@ -26,6 +29,34 @@ void loadSettings().then(() => chrome.tabs.query({}, (tabs) => tabs.forEach((tab
 onSettingsChange(() => chrome.tabs.query({}, (tabs) => tabs.forEach((tab) => { if (tab.id) void refreshBadge(tab.id, tab.url); })));
 chrome.tabs.onActivated.addListener(({ tabId }) => chrome.tabs.get(tabId, (tab) => { if (!chrome.runtime.lastError) void refreshBadge(tabId, tab.url); }));
 chrome.tabs.onUpdated.addListener((tabId, change, tab) => { if (change.status === "complete" || change.url) void refreshBadge(tabId, tab.url); });
+
+// ── Build a provider from settings ────────────────────────────────────────────
+async function buildProvider(settings: Settings) {
+  const ai = settings.ai;
+  if (ai.demoMode || ai.mode === "local") {
+    if (ai.demoMode) {
+      return new MockProvider();
+    }
+    return new LocalOpenAICompatProvider({
+      endpoint: ai.localEndpoint,
+      modelId: ai.localModel,
+      contextSize: ai.localContextSize,
+      timeoutMs: ai.localTimeoutMs,
+      apiKey: ai.localApiKey || undefined,
+    });
+  }
+  // Fallback to local for hybrid (cloud handled in P06)
+  return new LocalOpenAICompatProvider({
+    endpoint: ai.localEndpoint,
+    modelId: ai.localModel,
+    contextSize: ai.localContextSize,
+    timeoutMs: ai.localTimeoutMs,
+    apiKey: ai.localApiKey || undefined,
+  });
+}
+
+// Track in-flight NL command abort controllers (keyed by tabId)
+const _nlAborts = new Map<number, AbortController>();
 
 // ── Message handler ───────────────────────────────────────────────────────────
 chrome.runtime.onMessage.addListener((raw, _sender, sendResponse) => {
@@ -57,6 +88,171 @@ chrome.runtime.onMessage.addListener((raw, _sender, sendResponse) => {
     return true; // async response
   }
 
+  // ── P05: Provider status check ──────────────────────────────────────────────
+  if (msg.type === "GET_PROVIDER_STATUS") {
+    void (async () => {
+      try {
+        const settings = await loadSettings();
+        const provider = await buildProvider(settings);
+        const status = await provider.testConnection();
+        sendResponse({
+          type: "PROVIDER_STATUS",
+          ok: status.ok,
+          latencyMs: status.latencyMs,
+          modelId: status.modelId,
+          error: status.error,
+          demoMode: settings.ai.demoMode,
+        });
+      } catch (err) {
+        sendResponse({
+          type: "PROVIDER_STATUS",
+          ok: false,
+          error: String(err),
+          demoMode: false,
+        });
+      }
+    })();
+    return true;
+  }
+
+  // ── P05: NL command ─────────────────────────────────────────────────────────
+  if (msg.type === "NL_COMMAND") {
+    const { request, tabId } = msg;
+
+    void (async () => {
+      // Cancel any previous in-flight request for this tab
+      _nlAborts.get(tabId)?.abort("superseded");
+      const ctrl = new AbortController();
+      _nlAborts.set(tabId, ctrl);
+
+      try {
+        // ── Deterministic shortcuts first (no AI call) ────────────────────
+        const shortcut = detectShortcut(request);
+        if (shortcut) {
+          if (shortcut.type === "undo") {
+            chrome.tabs.sendMessage(tabId, { type: "UNDO_PAGE" });
+          } else if (shortcut.type === "reset") {
+            chrome.tabs.sendMessage(tabId, { type: "RESET_PAGE" });
+          } else if (shortcut.type === "turn-off") {
+            const settings = await loadSettings();
+            const tab = await chrome.tabs.get(tabId);
+            const hostname = tab.url ? new URL(tab.url).hostname : "";
+            if (hostname) {
+              const siteRules = settings.siteRules.filter((r) => r.hostname !== hostname);
+              siteRules.push({ hostname, enabled: false, includeSubdomains: false, profileId: null, disabledOperations: [], typography: {}, appearance: {}, focus: undefined, motion: undefined });
+              await saveSettings({ ...settings, siteRules });
+            }
+          } else if (shortcut.type === "save-profile") {
+            // Save current ops as a profile — basic implementation
+            const settings = await loadSettings();
+            const tab = await chrome.tabs.get(tabId);
+            const hostname = tab.url ? new URL(tab.url).hostname : "";
+            const existing = settings.profiles.find((p) => p.name.toLowerCase() === shortcut.name.toLowerCase());
+            if (!existing) {
+              const typography = resolveTypography(settings, hostname);
+              const newProfile = { id: `custom-${Date.now()}`, name: shortcut.name, builtIn: false, typography, appearance: resolveAppearance(settings, hostname) };
+              await saveSettings({ ...settings, profiles: [...settings.profiles, newProfile] });
+            }
+          }
+          sendResponse({
+            type: "NL_COMMAND_RESULT",
+            ok: true,
+            shortcut: true,
+            interpretedRequest: shortcut.type,
+            descriptions: [`Shortcut: ${shortcut.type}`],
+            confidence: 1,
+          });
+          return;
+        }
+
+        // ── Get DOM snapshot from content script ──────────────────────────
+        let snapshot: unknown;
+        try {
+          snapshot = await new Promise((resolve, reject) => {
+            chrome.tabs.sendMessage(tabId, { type: "GET_DOM_SNAPSHOT" }, (response) => {
+              if (chrome.runtime.lastError) {
+                reject(new Error(chrome.runtime.lastError.message ?? "No content script"));
+              } else {
+                resolve(response?.payload ?? null);
+              }
+            });
+          });
+        } catch (err) {
+          sendResponse({
+            type: "NL_COMMAND_RESULT",
+            ok: false,
+            error: "Could not read the page. Make sure the extension is active on this page.",
+            errorCode: "no-content-script",
+          });
+          return;
+        }
+
+        if (!snapshot) {
+          sendResponse({
+            type: "NL_COMMAND_RESULT",
+            ok: false,
+            error: "No page snapshot received.",
+            errorCode: "no-snapshot",
+          });
+          return;
+        }
+
+        // ── Build provider + run planner ──────────────────────────────────
+        const settings = await loadSettings();
+        const provider = await buildProvider(settings);
+
+        // Hard gate: in local mode, NOTHING leaves the machine.
+        // Provider routing enforces this (LocalOpenAICompatProvider never calls cloud).
+
+        const { validated, retried } = await runPlanner(
+          provider,
+          request,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          snapshot as any,
+          ctrl.signal
+        );
+
+        _nlAborts.delete(tabId);
+
+        const descriptions = describeOperations(validated.validOps);
+
+        sendResponse({
+          type: "NL_COMMAND_RESULT",
+          ok: true,
+          plan: { ...validated.plan, operations: validated.validOps },
+          descriptions,
+          interpretedRequest: validated.plan.interpretedRequest,
+          confidence: validated.plan.confidence,
+          warnings: [
+            ...(retried ? ["Plan was retried due to validation errors."] : []),
+            ...validated.errors,
+          ],
+        });
+      } catch (err) {
+        _nlAborts.delete(tabId);
+
+        if (err instanceof ProviderError) {
+          const { message, hint } = formatProviderError(err);
+          sendResponse({
+            type: "NL_COMMAND_RESULT",
+            ok: false,
+            error: message,
+            errorCode: err.code,
+            hint,
+          });
+        } else {
+          sendResponse({
+            type: "NL_COMMAND_RESULT",
+            ok: false,
+            error: String(err),
+            errorCode: "unknown",
+          });
+        }
+      }
+    })();
+    return true; // async response
+  }
+
   return false;
 });
 
@@ -64,3 +260,4 @@ chrome.runtime.onMessage.addListener((raw, _sender, sendResponse) => {
 chrome.runtime.onInstalled.addListener((details) => {
   console.log("[AWL background] installed/updated:", details.reason);
 });
+
