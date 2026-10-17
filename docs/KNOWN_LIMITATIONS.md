@@ -1,0 +1,16 @@
+# Known Limitations
+
+P00: llama-server is present at ~/llama.cpp/build/bin/llama-server; llama-server stays outside the project repo. The extension settings UI (P05) will expose a configurable endpoint URL defaulting to http://localhost:11434. No code in the project references the binary path — only the URL.
+P00: E2e tests require fixtures server to be running separately — not auto-started by `npm run e2e`; see README for the correct command order. This environment cannot bind local sockets or launch Chrome, so browser smoke and manual fixture checks remain unverified here.
+P00: Extension icons are minimal programmatic PNGs — will be replaced with proper branded icons in P10.
+P00-BUG-FIXED: Content script was built as ES module (import statement), causing SyntaxError in Chrome because MV3 content scripts are injected as classic scripts. Fixed by building content.js separately as IIFE via vite.content.config.ts.
+P01: Chrome storage loads asynchronously at document_start, so saved preferences may apply after the browser's first paint. The managed stylesheet is attached as soon as the document head/root exists.
+P02: The content script logs measured settings-to-apply latency as `[AWL] apply_ms <milliseconds>` on each apply. A live fixture timing sample could not be captured: `npm run fixtures` failed with `listen EPERM` on `127.0.0.1:4173`, and `npm run e2e` could not launch Chromium (`SIGTRAP` after a crashpad socket permission error), so no latency number is claimed. Startup timing includes asynchronous `chrome.storage.local` access and can occur after first paint. Added-subtree handling is debounced by 120 ms; managed CSS selectors style inserted descendants once the rule is present.
+P03: Root inversion may affect stacking contexts and fixed-position containing blocks; the sticky/fixed header scroll check was reported working on `article-sidebars.html`, but was not independently verified in this environment. CSS-background reinversion and Smart palette mapping are bounded to 2,500 elements and are best-effort. Storage remains asynchronous, so the minimal root theme is applied after settings load and a short first-paint flash can still occur. Smart recolors opaque computed surface colors and text; gradients, images, and complex site-specific color logic may remain unchanged. Explicitly dark pages are left untouched by Fast inversion; the force override is shown only for luminance-only detections.
+P03 follow-up: Browser checks need a reachable fixture server. The e2e suite defaults to port 4173 and accepts `FIXTURES_URL` for another local port. Smart remains best-effort for the initial bounded DOM snapshot; dynamically inserted content is picked up by the settings refresh only when an operation's parameters change.
+
+
+# By User : 
+Turning the extension off and then turning it back on makes it un-responsive. 
+P04: CSS-less JavaScript animation, GIFs, canvas/WebGL, and third-party media policies cannot be reliably paused or reduced. The motion operation pauses currently autoplaying and subsequently inserted autoplay media but intentionally does not block user-initiated play.
+P04 follow-up: Cross-origin iframe content and closed shadow roots remain outside the content script’s reach; CSS and media controls apply only to the current document.

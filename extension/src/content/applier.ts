@@ -3,14 +3,17 @@
 // through the Operation registry. This is THE ONLY place that maps
 // settings to operations; popup, options, and agent loop all call here.
 
-import type { AppearancePrefs, TypographyPrefs } from "../shared/settings";
+import type { AppearancePrefs, FocusPrefs, MotionPrefs, TypographyPrefs } from "../shared/settings";
 import { applyPlan, type ApplyContext, type PlanStep, type Revert } from "../shared/registry";
 import { appearancePlanSteps } from "./appearanceOps";
+import { focusPlanSteps } from "./focusOps";
 
 // Keep track of the current revert handle so re-applying always does a clean replace
 let _currentRevert: Revert | null = null;
 const _appearanceApplied = new Map<string, { signature: string; revert: Revert }>();
 let _appearanceReset: Revert | null = null;
+let _focusRevert: Revert | null = null;
+let _focusSignature = "";
 let _currentPrefs: TypographyPrefs | null = null;
 const _undo: TypographyPrefs[] = [];
 
@@ -120,7 +123,20 @@ export function revertAppearance(): void {
   _appearanceReset?.();
 }
 
+export function applyFocus(ctx: ApplyContext, focus: FocusPrefs, motion: MotionPrefs): Revert {
+  const signature = JSON.stringify({ focus, motion });
+  if (_focusRevert && signature === _focusSignature) return _focusRevert;
+  _focusRevert?.();
+  const result = applyPlan(ctx, focusPlanSteps(focus, motion));
+  _focusSignature = signature;
+  _focusRevert = result.revert;
+  return result.revert;
+}
+
+export function revertFocus(): void { _focusRevert?.(); _focusRevert = null; _focusSignature = ""; }
+
 export function resetPageAll(): void {
   revertTypography();
   revertAppearance();
+  revertFocus();
 }

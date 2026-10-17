@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import type { TypographyPrefs } from "../shared/settings";
-import { TypographyPrefsSchema } from "../shared/settings";
+import { TypographyPrefsSchema, defaultSettings } from "../shared/settings";
 import { AppearancePrefsSchema, type AppearancePrefs } from "../shared/settings";
 import { loadSettings, saveSettings } from "../shared/storage";
 import { FONT_OPTIONS } from "../content/typographyOps";
@@ -222,8 +222,16 @@ export default function AppearanceTab(): React.ReactElement {
       </div>
 
       <GlobalAppearanceControls />
+      <GlobalFocusMotionControls />
     </div>
   );
+}
+
+function GlobalFocusMotionControls(): React.ReactElement {
+  const [focus, setFocus] = useState(defaultSettings().global.focus); const [motion, setMotion] = useState(defaultSettings().global.motion);
+  useEffect(() => { void loadSettings().then((settings) => { setFocus(settings.global.focus); setMotion(settings.global.motion); }); }, []);
+  const save = (nextFocus = focus, nextMotion = motion) => { setFocus(nextFocus); setMotion(nextMotion); void loadSettings().then((settings) => saveSettings({ ...settings, global: { ...settings.global, focus: nextFocus, motion: nextMotion } })); };
+  return <div className="opt-section"><h3 className="opt-section-title">Focus & motion</h3><p className="opt-section-note">These global controls can be overridden per site from the popup.</p>{([['collapseSidebars', 'Collapse sidebars'], ['dimNonMain', 'Dim non-reading areas'], ['staticifyStickyHeaders', 'Make sticky headers static']] as const).map(([key, label]) => <label className="opt-row" key={key}><input type="checkbox" checked={focus[key]} onChange={(event) => save({ ...focus, [key]: event.target.checked })}/>{label}</label>)}{([['reduceMotion', 'Reduce animation'], ['reduceParallax', 'Reduce parallax'], ['pauseAutoplay', 'Pause autoplay media']] as const).map(([key, label]) => <label className="opt-row" key={key}><input type="checkbox" checked={motion[key]} onChange={(event) => save(focus, { ...motion, [key]: event.target.checked })}/>{label}</label>)}<small className="opt-section-note">JavaScript-only animation, GIFs, and canvas motion may not be controllable.</small></div>;
 }
 
 function GlobalAppearanceControls(): React.ReactElement {

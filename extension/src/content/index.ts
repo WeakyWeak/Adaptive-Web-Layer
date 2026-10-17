@@ -1,12 +1,14 @@
 import { parseMessage } from "../shared/messages";
 import { loadSettings, onSettingsChange } from "../shared/storage";
-import { resolveTypography, resolveAppearance, isSiteEnabled } from "../shared/settings";
+import { resolveTypography, resolveAppearance, resolveFocus, resolveMotion, isSiteEnabled, matchingSiteRule } from "../shared/settings";
 import { getStyleLayer } from "./styleLayer";
 import { registerTypographyOps } from "./typographyOps";
-import { applyTypography, applyAppearance, revertTypography, revertAppearance, undoTypography, resetPageAll } from "./applier";
+import { applyTypography, applyAppearance, applyFocus, revertTypography, revertAppearance, revertFocus, undoTypography, resetPageAll } from "./applier";
 import { registerAppearanceOps } from "./appearanceOps";
 import { detectExistingDark, shouldSkipDarkTheme } from "./darkDetection";
 import { injectBundledFonts } from "./fontInjector";
+import { registerFocusOps } from "./focusOps";
+import { ElementPicker, focusCandidates } from "./elementPicker";
 import type { ApplyContext } from "../shared/registry";
 
 // Detect restricted pages (chrome://, chrome-extension://, Web Store, etc.)
@@ -31,6 +33,7 @@ if (isRestrictedPage()) {
   // Register all operations once
   registerTypographyOps();
   registerAppearanceOps();
+  registerFocusOps();
 
   const styleLayer = getStyleLayer();
   // Inject bundled fonts so they are available for use
@@ -52,6 +55,7 @@ if (isRestrictedPage()) {
       if (!isSiteEnabled(settings, hostname)) {
         revertTypography();
         revertAppearance();
+        revertFocus();
         observer?.disconnect();
         observer = null;
         return;
@@ -67,6 +71,7 @@ if (isRestrictedPage()) {
       // Apply the root theme as soon as storage resolves, before prose-level rules.
       applyAppearance(ctx, appearance, appearance.theme, shouldSkipTheme);
       applyTypography(ctx, prefs);
+      applyFocus(ctx, resolveFocus(settings, hostname), resolveMotion(settings, hostname));
       if (!observer && document.documentElement) {
         observer = new MutationObserver((records) => {
           const hasPageChanges = records.some((record) => record.type === "attributes" || Array.from(record.addedNodes).some((node) =>
@@ -153,6 +158,25 @@ if (isRestrictedPage()) {
     if (msg.type === "GET_APPEARANCE_STATUS") {
       const status = detectExistingDark();
       sendResponse({ type: "APPEARANCE_STATUS", ...status });
+      return false;
+    }
+
+    if (msg.type === "GET_FOCUS_CANDIDATES") {
+      sendResponse({ type: "FOCUS_CANDIDATES", candidates: focusCandidates() });
+      return false;
+    }
+
+    if (msg.type === "START_ELEMENT_PICKER") {
+      new ElementPicker((selector, action) => {
+        void loadSettings().then(async (settings) => {
+          const current = matchingSiteRule(settings, hostname);
+          const field = action === "hide" ? "hiddenSelectors" : "preservedSelectors";
+          const focus = { ...(current?.focus ?? {}), [field]: [...new Set([...(current?.focus?.[field] ?? []), selector])].slice(0, 30) };
+          const rule = { hostname, enabled: current?.enabled ?? true, includeSubdomains: false, profileId: current?.profileId ?? null, disabledOperations: current?.disabledOperations ?? [], typography: current?.typography ?? {}, appearance: current?.appearance ?? {}, focus, motion: current?.motion ?? {} };
+          await chrome.storage.local.set({ awl_settings: { ...settings, siteRules: [...settings.siteRules.filter((item) => item.hostname !== hostname), rule] } });
+        });
+      }, () => undefined);
+      sendResponse({ type: "ACK", ok: true });
       return false;
     }
 

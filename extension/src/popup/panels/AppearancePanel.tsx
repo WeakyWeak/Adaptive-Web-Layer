@@ -42,6 +42,8 @@ export default function AppearancePanel(): React.ReactElement {
       disabledOperations: inheritedRule?.disabledOperations ?? [],
       typography: inheritedRule?.typography ?? {},
       appearance: { ...inheritedRule?.appearance, ...patch },
+      focus: inheritedRule?.focus ?? {},
+      motion: inheritedRule?.motion ?? {},
     };
     const next = { ...settings, siteRules: [...settings.siteRules.filter((rule) => rule.hostname !== hostname), nextRule] };
     if (await saveSettings(next)) {

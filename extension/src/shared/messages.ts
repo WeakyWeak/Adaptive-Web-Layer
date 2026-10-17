@@ -74,6 +74,9 @@ export const AppearanceStatusSchema = z.object({
   explicitDark: z.boolean(),
   signals: z.array(z.string()),
 });
+export const StartElementPickerSchema = z.object({ type: z.literal("START_ELEMENT_PICKER") });
+export const GetFocusCandidatesSchema = z.object({ type: z.literal("GET_FOCUS_CANDIDATES") });
+export const FocusCandidatesSchema = z.object({ type: z.literal("FOCUS_CANDIDATES"), candidates: z.array(z.object({ selector: z.string(), label: z.string() })) });
 
 // ── Generic ack ───────────────────────────────────────────────────────────────
 
@@ -96,6 +99,9 @@ export const AnyMessageSchema = z.discriminatedUnion("type", [
   PageActionSchema,
   GetAppearanceStatusSchema,
   AppearanceStatusSchema,
+  StartElementPickerSchema,
+  GetFocusCandidatesSchema,
+  FocusCandidatesSchema,
   AckSchema,
 ]);
 export type AnyMessage = z.infer<typeof AnyMessageSchema>;

@@ -2,7 +2,7 @@ import { z } from "zod";
 
 // ─── Schema version ──────────────────────────────────────────────────────────
 // Bump this when you add a migration below.
-export const SETTINGS_VERSION = 4;
+export const SETTINGS_VERSION = 5;
 
 // ─── Typography preferences ──────────────────────────────────────────────────
 export const FONT_FAMILY_OPTIONS = [
@@ -35,10 +35,28 @@ export const AppearancePrefsSchema = z.object({
 });
 export type AppearancePrefs = z.infer<typeof AppearancePrefsSchema>;
 
+export const FocusPrefsSchema = z.object({
+  collapseSidebars: z.boolean().default(false),
+  dimNonMain: z.boolean().default(false),
+  staticifyStickyHeaders: z.boolean().default(false),
+  hiddenSelectors: z.array(z.string().min(1).max(512)).max(30).default([]),
+  preservedSelectors: z.array(z.string().min(1).max(512)).max(30).default([]),
+});
+export type FocusPrefs = z.infer<typeof FocusPrefsSchema>;
+
+export const MotionPrefsSchema = z.object({
+  reduceMotion: z.boolean().default(false),
+  reduceParallax: z.boolean().default(false),
+  pauseAutoplay: z.boolean().default(false),
+});
+export type MotionPrefs = z.infer<typeof MotionPrefsSchema>;
+
 // ─── Global preferences ──────────────────────────────────────────────────────
 export const GlobalPrefsSchema = z.object({
   typography: TypographyPrefsSchema.default({}),
   appearance: AppearancePrefsSchema.default({}),
+  focus: FocusPrefsSchema.default({}),
+  motion: MotionPrefsSchema.default({}),
   applyToWholePage: z.boolean().default(false),
 });
 export type GlobalPrefs = z.infer<typeof GlobalPrefsSchema>;
@@ -49,6 +67,8 @@ export const NamedProfileSchema = z.object({
   name: z.string(),
   typography: TypographyPrefsSchema.default({}),
   appearance: AppearancePrefsSchema.default({}),
+  focus: FocusPrefsSchema.optional(),
+  motion: MotionPrefsSchema.optional(),
   builtIn: z.boolean().default(false),
 });
 export type NamedProfile = z.infer<typeof NamedProfileSchema>;
@@ -62,6 +82,8 @@ export const SiteRuleSchema = z.object({
   disabledOperations: z.array(z.string()).default([]),
   typography: TypographyPrefsSchema.partial().default({}),
   appearance: AppearancePrefsSchema.partial().default({}),
+  focus: FocusPrefsSchema.partial().optional(),
+  motion: MotionPrefsSchema.partial().optional(),
 });
 export type SiteRule = z.infer<typeof SiteRuleSchema>;
 
@@ -106,10 +128,10 @@ export function normalizeHostname(hostname: string): string {
 }
 
 export const BUILT_IN_PROFILES: NamedProfile[] = [
-  { id: "study", name: "Study", builtIn: true, typography: TypographyPrefsSchema.parse({ fontFamily: "Atkinson Hyperlegible", fontSize: 18, lineHeight: 1.8, maxContentWidth: 900 }), appearance: AppearancePrefsSchema.parse({ theme: "sepia" }) },
-  { id: "night", name: "Night", builtIn: true, typography: TypographyPrefsSchema.parse({ fontFamily: "Lexend", fontSize: 17, lineHeight: 1.7, maxContentWidth: 1000 }), appearance: AppearancePrefsSchema.parse({ theme: "dark" }) },
-  { id: "minimal", name: "Minimal", builtIn: true, typography: TypographyPrefsSchema.parse({ fontSize: 16, lineHeight: 1.5, maxContentWidth: 800 }), appearance: AppearancePrefsSchema.parse({}) },
-  { id: "research", name: "Research", builtIn: true, typography: TypographyPrefsSchema.parse({ fontFamily: "Georgia", fontSize: 17, lineHeight: 1.75, maxContentWidth: 1100 }), appearance: AppearancePrefsSchema.parse({}) },
+  { id: "study", name: "Study", builtIn: true, typography: TypographyPrefsSchema.parse({ fontFamily: "Atkinson Hyperlegible", fontSize: 18, lineHeight: 1.8, maxContentWidth: 900 }), appearance: AppearancePrefsSchema.parse({ theme: "sepia" }), focus: FocusPrefsSchema.parse({ collapseSidebars: true, dimNonMain: true }), motion: MotionPrefsSchema.parse({ reduceMotion: true }) },
+  { id: "night", name: "Night", builtIn: true, typography: TypographyPrefsSchema.parse({ fontFamily: "Lexend", fontSize: 17, lineHeight: 1.7, maxContentWidth: 1000 }), appearance: AppearancePrefsSchema.parse({ theme: "dark" }), focus: FocusPrefsSchema.parse({}), motion: MotionPrefsSchema.parse({ reduceMotion: true }) },
+  { id: "minimal", name: "Minimal", builtIn: true, typography: TypographyPrefsSchema.parse({ fontSize: 16, lineHeight: 1.5, maxContentWidth: 800 }), appearance: AppearancePrefsSchema.parse({}), focus: FocusPrefsSchema.parse({ collapseSidebars: true, dimNonMain: true, staticifyStickyHeaders: true }), motion: MotionPrefsSchema.parse({ reduceMotion: true, reduceParallax: true, pauseAutoplay: true }) },
+  { id: "research", name: "Research", builtIn: true, typography: TypographyPrefsSchema.parse({ fontFamily: "Georgia", fontSize: 17, lineHeight: 1.75, maxContentWidth: 1100 }), appearance: AppearancePrefsSchema.parse({}), focus: FocusPrefsSchema.parse({}), motion: MotionPrefsSchema.parse({}) },
 ];
 
 // ─── Resolved typography for a hostname ──────────────────────────────────────
@@ -163,6 +185,17 @@ export function resolveAppearance(settings: Settings, hostname: string): Appeara
   };
 }
 
+function resolveFeature(settings: Settings, hostname: string, key: "focus" | "motion", schema: z.ZodTypeAny): unknown {
+  const base = schema.parse({});
+  if (!settings.enabled || !isSiteEnabled(settings, hostname)) return base;
+  const site = matchingSiteRule(settings, hostname);
+  const profile = settings.profiles.find((item) => item.id === (site?.profileId ?? settings.activeProfileId));
+  return schema.parse({ ...base, ...settings.global[key], ...(profile?.[key] ?? {}), ...(site?.[key] ?? {}) });
+}
+
+export function resolveFocus(settings: Settings, hostname: string): FocusPrefs { return FocusPrefsSchema.parse(resolveFeature(settings, hostname, "focus", FocusPrefsSchema)); }
+export function resolveMotion(settings: Settings, hostname: string): MotionPrefs { return MotionPrefsSchema.parse(resolveFeature(settings, hostname, "motion", MotionPrefsSchema)); }
+
 // ─── Is site enabled? ────────────────────────────────────────────────────────
 export function isSiteEnabled(settings: Settings, hostname: string): boolean {
   if (!settings.enabled) return false;
@@ -181,6 +214,7 @@ export function matchingSiteRule(settings: Settings, hostname: string): SiteRule
 // Each fn takes the raw object from storage and returns the migrated object.
 type MigrationFn = (raw: Record<string, unknown>) => Record<string, unknown>;
 const migrations: Record<number, MigrationFn> = {
+  5: (raw) => raw,
   4: (raw) => raw,
   // Example (unused): 1: (raw) => ({ ...raw, newField: "default" }),
 };
@@ -198,7 +232,7 @@ export function migrateSettings(raw: Record<string, unknown>): Settings {
   const storedProfiles = Array.isArray(data["profiles"]) ? data["profiles"] as NamedProfile[] : [];
   const builtIns = BUILT_IN_PROFILES.map((preset) => {
     const stored = storedProfiles.find((profile) => profile.id === preset.id);
-    return stored ? { ...preset, ...stored, builtIn: true, appearance: { ...preset.appearance, ...stored.appearance } } : preset;
+    return stored ? { ...preset, ...stored, builtIn: true, appearance: { ...preset.appearance, ...stored.appearance }, focus: { ...preset.focus, ...stored.focus }, motion: { ...preset.motion, ...stored.motion } } : preset;
   });
   data["profiles"] = [...builtIns, ...storedProfiles.filter((profile) => !BUILT_IN_PROFILES.some((preset) => preset.id === profile.id))];
   return SettingsSchema.parse(data);

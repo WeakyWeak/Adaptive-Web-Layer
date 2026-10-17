@@ -12,8 +12,10 @@ export interface PanelDescriptor {
 // P01: Reading panel (typography settings + live preview)
 import ReadingPanel from "./ReadingPanel";
 import AppearancePanel from "./AppearancePanel";
+import FocusMotionPanel from "./FocusMotionPanel";
 
 export const panels: PanelDescriptor[] = [
   { id: "reading", title: "Reading", Component: ReadingPanel as ComponentType<Record<string, never>> },
   { id: "appearance", title: "Appearance", Component: AppearancePanel as ComponentType<Record<string, never>> },
+  { id: "focus-motion", title: "Focus & Motion", Component: FocusMotionPanel as ComponentType<Record<string, never>> },
 ];
