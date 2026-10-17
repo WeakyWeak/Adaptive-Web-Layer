@@ -17,14 +17,14 @@ async function refreshBadge(tabId: number, url?: string): Promise<void> {
     const appearance = resolveAppearance(settings, hostname);
     const appearanceActive = appearance.theme !== "light" || appearance.contrast !== 1 || appearance.brightness !== 1 || appearance.saturation !== 1;
     const active = isSiteEnabled(settings, hostname) && (appearanceActive || Object.entries(resolveTypography(settings, hostname)).some(([key, value]) => value !== defaults[key]));
-    void chrome.action.setBadgeText({ tabId, text: active ? "ON" : "" });
-    void chrome.action.setBadgeBackgroundColor({ tabId, color: "#4f46e5" });
-  } catch { void chrome.action.setBadgeText({ tabId, text: "" }); }
+    await chrome.action.setBadgeText({ tabId, text: active ? "ON" : "" });
+    await chrome.action.setBadgeBackgroundColor({ tabId, color: "#4f46e5" });
+  } catch { /* Tabs can close between query and badge update. */ }
 }
 
 void loadSettings().then(() => chrome.tabs.query({}, (tabs) => tabs.forEach((tab) => { if (tab.id) void refreshBadge(tab.id, tab.url); })));
 onSettingsChange(() => chrome.tabs.query({}, (tabs) => tabs.forEach((tab) => { if (tab.id) void refreshBadge(tab.id, tab.url); })));
-chrome.tabs.onActivated.addListener(({ tabId }) => chrome.tabs.get(tabId, (tab) => { void refreshBadge(tabId, tab.url); }));
+chrome.tabs.onActivated.addListener(({ tabId }) => chrome.tabs.get(tabId, (tab) => { if (!chrome.runtime.lastError) void refreshBadge(tabId, tab.url); }));
 chrome.tabs.onUpdated.addListener((tabId, change, tab) => { if (change.status === "complete" || change.url) void refreshBadge(tabId, tab.url); });
 
 // ── Message handler ───────────────────────────────────────────────────────────

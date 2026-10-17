@@ -1,9 +1,9 @@
 import { parseMessage } from "../shared/messages";
-import { loadSettings, onSettingsChange } from "../shared/storage";
-import { resolveTypography, resolveAppearance, resolveFocus, resolveMotion, isSiteEnabled, matchingSiteRule } from "../shared/settings";
+import { loadSettings, onSettingsChange, saveSettings } from "../shared/storage";
+import { resolveTypography, resolveAppearance, resolveFocus, resolveMotion, isSiteEnabled, matchingSiteRule, type Settings } from "../shared/settings";
 import { getStyleLayer } from "./styleLayer";
 import { registerTypographyOps } from "./typographyOps";
-import { applyTypography, applyAppearance, applyFocus, revertTypography, revertAppearance, revertFocus, undoTypography, resetPageAll } from "./applier";
+import { applyTypography, applyAppearance, applyFocus, revertTypography, revertAppearance, revertFocus } from "./applier";
 import { registerAppearanceOps } from "./appearanceOps";
 import { detectExistingDark, shouldSkipDarkTheme } from "./darkDetection";
 import { injectBundledFonts } from "./fontInjector";
@@ -41,6 +41,8 @@ if (isRestrictedPage()) {
   let hostname = window.location.hostname;
   let observer: MutationObserver | null = null;
   let applyTimer: ReturnType<typeof setTimeout> | null = null;
+  let currentSettings: Settings | null = null;
+  let undoSettings: Settings | null = null;
 
   // Build apply context from current settings
   function makeCtx(applyToWholePage: boolean): ApplyContext {
@@ -48,10 +50,12 @@ if (isRestrictedPage()) {
   }
 
   // Apply saved settings on load (no AI call, no flash)
-  async function applyFromStorage(): Promise<void> {
+  async function applyFromStorage(nextSettings?: Settings, recordUndo = false): Promise<void> {
     try {
       const started = performance.now();
-      const settings = await loadSettings();
+      const settings = nextSettings ?? await loadSettings();
+      if (recordUndo && currentSettings && JSON.stringify(currentSettings) !== JSON.stringify(settings)) undoSettings = currentSettings;
+      currentSettings = settings;
       if (!isSiteEnabled(settings, hostname)) {
         revertTypography();
         revertAppearance();
@@ -101,9 +105,9 @@ if (isRestrictedPage()) {
   window.addEventListener("DOMContentLoaded", () => { void applyFromStorage(); }, { once: true });
   window.addEventListener("load", () => { void applyFromStorage(); }, { once: true });
 
-  onSettingsChange(() => {
+  onSettingsChange((settings) => {
     hostname = window.location.hostname;
-    void applyFromStorage();
+    void applyFromStorage(settings, true);
   });
 
   // SPA navigation: refresh site matching when the URL changes without a document load.
@@ -181,14 +185,19 @@ if (isRestrictedPage()) {
     }
 
     if (msg.type === "UNDO_PAGE") {
-      sendResponse({ type: "ACK", ok: undoTypography(makeCtx(false)) });
-      return false;
+      const previous = undoSettings;
+      if (!previous) { sendResponse({ type: "ACK", ok: false, error: "No page setting to undo" }); return false; }
+      void saveSettings(previous).then((ok) => sendResponse({ type: "ACK", ok, error: ok ? undefined : "Could not restore the previous page setting" }));
+      return true;
     }
 
     if (msg.type === "RESET_PAGE") {
-      resetPageAll();
-      sendResponse({ type: "ACK", ok: true });
-      return false;
+      void loadSettings().then((settings) => {
+        const current = matchingSiteRule(settings, hostname);
+        const rule = { hostname, enabled: false, includeSubdomains: current?.includeSubdomains ?? false, profileId: current?.profileId ?? null, disabledOperations: current?.disabledOperations ?? [], typography: current?.typography ?? {}, appearance: current?.appearance ?? {}, focus: current?.focus ?? {}, motion: current?.motion ?? {} };
+        return saveSettings({ ...settings, siteRules: [...settings.siteRules.filter((item) => item.hostname !== hostname), rule] });
+      }).then((ok) => sendResponse({ type: "ACK", ok, error: ok ? undefined : "Could not reset this page" })).catch((error) => sendResponse({ type: "ACK", ok: false, error: String(error) }));
+      return true;
     }
 
     return false;

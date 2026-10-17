@@ -14,3 +14,4 @@ P03 follow-up: Browser checks need a reachable fixture server. The e2e suite def
 Turning the extension off and then turning it back on makes it un-responsive. 
 P04: CSS-less JavaScript animation, GIFs, canvas/WebGL, and third-party media policies cannot be reliably paused or reduced. The motion operation pauses currently autoplaying and subsequently inserted autoplay media but intentionally does not block user-initiated play.
 P04 follow-up: Cross-origin iframe content and closed shadow roots remain outside the content script’s reach; CSS and media controls apply only to the current document.
+P04 follow-up: Undo is scoped to the immediately previous settings change observed by the current tab’s content script; it is not a cross-session revision history.
