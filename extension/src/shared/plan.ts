@@ -38,6 +38,10 @@ export type ProviderErrorCode =
   | "invalid-json"
   | "context-overflow"
   | "network"
+  | "rate-limit"
+  | "proxy-down"
+  | "safety-block"
+  | "consent-required"
   | "unknown";
 
 export class ProviderError extends Error {
@@ -69,6 +73,10 @@ export function formatProviderError(err: ProviderError): {
     "context-overflow":
       "Your request exceeded the model's context limit. Try a shorter page or simpler request.",
     network: "Network error communicating with the local AI server.",
+    "rate-limit": "The cloud proxy is temporarily rate-limited. Wait a minute and try again.",
+    "proxy-down": "The local cloud proxy is not running. Start it, then try again.",
+    "safety-block": "The cloud provider declined this request for safety reasons.",
+    "consent-required": "Cloud AI needs your consent before any page data is sent.",
     unknown: "An unexpected error occurred.",
   };
   return {

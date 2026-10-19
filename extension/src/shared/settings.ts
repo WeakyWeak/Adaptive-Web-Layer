@@ -2,7 +2,7 @@ import { z } from "zod";
 
 // ─── Schema version ──────────────────────────────────────────────────────────
 // Bump this when you add a migration below.
-export const SETTINGS_VERSION = 6;
+export const SETTINGS_VERSION = 7;
 
 // ─── Typography preferences ──────────────────────────────────────────────────
 export const FONT_FAMILY_OPTIONS = [
@@ -96,7 +96,11 @@ export const AiSettingsSchema = z.object({
   localContextSize: z.number().min(512).max(131072).default(8192),
   localApiKey: z.string().default(""),
   localTimeoutMs: z.number().min(1000).max(120000).default(30000),
-  cloudModel: z.string().default(""),
+  // The proxy is local; this token authorizes only that proxy, never Gemini.
+  cloudModel: z.string().min(1).max(128).default("gemini-3.8-flash"),
+  cloudProxyUrl: z.string().url().default("http://127.0.0.1:8787"),
+  cloudProxyToken: z.string().max(512).default(""),
+  cloudTimeoutMs: z.number().min(1000).max(120000).default(30000),
   cloudEnabled: z.boolean().default(false),
   demoMode: z.boolean().default(false),
 });
@@ -104,10 +108,23 @@ export type AiSettings = z.infer<typeof AiSettingsSchema>;
 
 // ─── Privacy settings ────────────────────────────────────────────────────────
 export const PrivacySettingsSchema = z.object({
+  /** Legacy global consent. Retained only so older settings migrate safely. */
   cloudConsent: z.boolean().default(false),
   cloudConsentTimestamp: z.number().optional(),
+  /** Explicit, per-site cloud decisions. */
+  cloudSiteConsents: z.record(z.enum(["allow", "deny"])).default({}),
+  /** A single queued cloud request; consumed by the background after use. */
+  cloudAllowOnceFor: z.string().optional(),
 });
 export type PrivacySettings = z.infer<typeof PrivacySettingsSchema>;
+
+export type CloudConsent = "allow" | "deny" | "pending";
+
+export function cloudConsentFor(privacy: PrivacySettings, hostname: string): CloudConsent {
+  const normalized = normalizeHostname(hostname);
+  if (privacy.cloudAllowOnceFor === normalized) return "allow";
+  return privacy.cloudSiteConsents[normalized] ?? (privacy.cloudConsent ? "allow" : "pending");
+}
 
 // ─── Root settings ───────────────────────────────────────────────────────────
 export const SettingsSchema = z.object({
@@ -218,6 +235,7 @@ export function matchingSiteRule(settings: Settings, hostname: string): SiteRule
 // Each fn takes the raw object from storage and returns the migrated object.
 type MigrationFn = (raw: Record<string, unknown>) => Record<string, unknown>;
 const migrations: Record<number, MigrationFn> = {
+  7: (raw) => raw,
   6: (raw) => raw, // AI settings fields added with defaults
   5: (raw) => raw,
   4: (raw) => raw,

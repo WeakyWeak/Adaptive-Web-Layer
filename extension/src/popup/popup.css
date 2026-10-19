@@ -387,6 +387,9 @@ body {
   color: #94a3b8;
   font-style: italic;
 }
+.cloud-consent { margin-top: 10px; padding-top: 8px; border-top: 1px solid #7f1d1d; color: #fecaca; font-size: 11px; }
+.cloud-consent p { color: #cbd5e1; line-height: 1.4; }
+.cloud-consent-actions { display: flex; flex-wrap: wrap; gap: 5px; }
 
 .btn-primary {
   background: #4f46e5;

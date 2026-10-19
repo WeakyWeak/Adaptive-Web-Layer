@@ -33,6 +33,7 @@ export default function AICommandPanel(): React.ReactElement {
   const [result, setResult] = useState<NlCommandResult | null>(null);
   const [previewActive, setPreviewActive] = useState(false);
   const [appliedPlan, setAppliedPlan] = useState<Plan | null>(null);
+  const [savingConsent, setSavingConsent] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Check provider status on mount
@@ -145,6 +146,25 @@ export default function AICommandPanel(): React.ReactElement {
     });
     setPreviewActive(false);
     // Keep appliedPlan so undo works
+  };
+
+  const saveConsent = (decision: "allow-once" | "allow-site" | "deny") => {
+    const hostname = result?.consentHost;
+    if (!hostname || savingConsent) return;
+    setSavingConsent(true);
+    chrome.runtime.sendMessage({ type: "SET_CLOUD_CONSENT", hostname, decision }, (response) => {
+      setSavingConsent(false);
+      if (chrome.runtime.lastError || !response?.ok) {
+        setResult({ type: "NL_COMMAND_RESULT", ok: false, error: "Could not save your cloud consent choice.", errorCode: "consent-save" });
+        return;
+      }
+      if (decision === "deny") {
+        setResult({ type: "NL_COMMAND_RESULT", ok: false, error: "Cloud use was denied for this site.", errorCode: "consent-denied" });
+        return;
+      }
+      setResult(null);
+      inputRef.current?.form?.requestSubmit();
+    });
   };
 
   return (
@@ -266,6 +286,18 @@ export default function AICommandPanel(): React.ReactElement {
               <div className="ai-error-msg">⚠ {result.error}</div>
               {result.hint && (
                 <div className="ai-error-hint">{result.hint}</div>
+              )}
+              {result.errorCode === "consent-required" && result.consentHost && (
+                <section className="cloud-consent" aria-label="Cloud consent">
+                  <strong>Before cloud AI is used on {result.consentHost}</strong>
+                  <p>This request will send your command and minimal page DOM metadata to the local proxy and Gemini. It will not send a screenshot region or selected text.</p>
+                  <p>Google’s free-tier Gemini service may retain or use inputs to improve models and may allow human review.</p>
+                  <div className="cloud-consent-actions">
+                    <button className="btn-primary" onClick={() => saveConsent("allow-once")} disabled={savingConsent}>Allow once</button>
+                    <button className="btn-secondary" onClick={() => saveConsent("allow-site")} disabled={savingConsent}>Allow for this site</button>
+                    <button className="btn-secondary" onClick={() => saveConsent("deny")} disabled={savingConsent}>Deny</button>
+                  </div>
+                </section>
               )}
             </div>
           )}

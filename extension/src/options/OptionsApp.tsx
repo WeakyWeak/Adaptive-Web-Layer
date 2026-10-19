@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from "react";
 import "./options.css";
 import AppearanceTab from "./AppearanceTab";
+import AiTab from "./AiTab";
+import PrivacyTab from "./PrivacyTab";
 import { defaultSettings, SettingsSchema, BUILT_IN_PROFILES, resolveAppearance, resolveFocus, resolveMotion, resolveTypography, type Settings } from "../shared/settings";
 import { loadSettings, saveSettings } from "../shared/storage";
 
@@ -27,6 +29,11 @@ export default function OptionsApp(): React.ReactElement {
     if (await saveSettings(next)) { setSettings(next); setMessage("Saved"); }
     else setMessage("Could not save settings");
   };
+  const clearAll = async () => {
+    await chrome.storage.local.clear();
+    setSettings(defaultSettings());
+    setMessage("All extension data and caches cleared");
+  };
 
   return (
     <div className="options-root">
@@ -50,7 +57,7 @@ export default function OptionsApp(): React.ReactElement {
         </nav>
 
         <main className="options-content">
-          {activeTab === "appearance" ? <AppearanceTab /> : activeTab === "profiles" ? (
+          {activeTab === "appearance" ? <AppearanceTab /> : activeTab === "ai" ? <AiTab settings={settings} update={update} /> : activeTab === "privacy" ? <PrivacyTab settings={settings} update={update} clear={clearAll} /> : activeTab === "profiles" ? (
             <section className="tab-panel"><h2 className="tab-heading">Profiles</h2>
               <button onClick={() => void update({ ...settings, profiles: [...settings.profiles, { id: crypto.randomUUID(), name: "New profile", typography: settings.global.typography, appearance: settings.global.appearance, focus: settings.global.focus, motion: settings.global.motion, builtIn: false }] })}>Create profile</button>
               <button onClick={() => chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => { const hostname = tabs[0]?.url ? new URL(tabs[0].url).hostname : ""; const typography = hostname ? resolveTypography(settings, hostname) : settings.global.typography; const appearance = hostname ? resolveAppearance(settings, hostname) : settings.global.appearance; const focus = hostname ? resolveFocus(settings, hostname) : settings.global.focus; const motion = hostname ? resolveMotion(settings, hostname) : settings.global.motion; void update({ ...settings, profiles: [...settings.profiles, { id: crypto.randomUUID(), name: "Saved current settings", typography, appearance, focus, motion, builtIn: false }] }); })}>Save current page settings as profile</button>
@@ -78,8 +85,6 @@ function TabContent({ tabId }: { tabId: TabId }): React.ReactElement {
   const placeholders: Partial<Record<TabId, string>> = {
     profiles: "Named profiles (Study, Night, Research, Minimal), per-site overrides — coming in P02.",
     sites: "Per-site enable/disable and site-specific settings — coming in P02.",
-    ai: "Local AI endpoint (llama-server), cloud AI (Gemini), and Sarvam translation settings — coming in P05/P06.",
-    privacy: "Cloud consent, data retention, and privacy controls — coming in P06.",
     "import-export": "Export and import your settings as JSON — coming in P02.",
     troubleshooting: "Debug info, extension version, and reset options — coming in P10.",
   };

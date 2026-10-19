@@ -4,8 +4,9 @@
 
 import { parseMessage } from "../shared/messages";
 import { loadSettings, onSettingsChange, saveSettings } from "../shared/storage";
-import { isSiteEnabled, resolveAppearance, resolveTypography, type Settings } from "../shared/settings";
+import { cloudConsentFor, isSiteEnabled, normalizeHostname, resolveAppearance, resolveTypography, type Settings } from "../shared/settings";
 import { LocalOpenAICompatProvider, MockProvider } from "../shared/llmProvider";
+import { ProviderRouter } from "../shared/providerRouter";
 import { runPlanner, describeOperations } from "./planner";
 import { detectShortcut, ProviderError, formatProviderError } from "../shared/plan";
 
@@ -31,12 +32,10 @@ chrome.tabs.onActivated.addListener(({ tabId }) => chrome.tabs.get(tabId, (tab) 
 chrome.tabs.onUpdated.addListener((tabId, change, tab) => { if (change.status === "complete" || change.url) void refreshBadge(tabId, tab.url); });
 
 // ── Build a provider from settings ────────────────────────────────────────────
-async function buildProvider(settings: Settings) {
+async function buildProvider(settings: Settings, hostname = ""): Promise<LocalOpenAICompatProvider | MockProvider | ProviderRouter> {
   const ai = settings.ai;
-  if (ai.demoMode || ai.mode === "local") {
-    if (ai.demoMode) {
-      return new MockProvider();
-    }
+  if (ai.demoMode) return new MockProvider();
+  if (ai.mode === "local") {
     return new LocalOpenAICompatProvider({
       endpoint: ai.localEndpoint,
       modelId: ai.localModel,
@@ -45,13 +44,9 @@ async function buildProvider(settings: Settings) {
       apiKey: ai.localApiKey || undefined,
     });
   }
-  // Fallback to local for hybrid (cloud handled in P06)
-  return new LocalOpenAICompatProvider({
-    endpoint: ai.localEndpoint,
-    modelId: ai.localModel,
-    contextSize: ai.localContextSize,
-    timeoutMs: ai.localTimeoutMs,
-    apiKey: ai.localApiKey || undefined,
+  return new ProviderRouter({
+    settings: ai,
+    cloudAllowed: hostname ? cloudConsentFor(settings.privacy, hostname) === "allow" : false,
   });
 }
 
@@ -102,6 +97,7 @@ chrome.runtime.onMessage.addListener((raw, _sender, sendResponse) => {
           modelId: status.modelId,
           error: status.error,
           demoMode: settings.ai.demoMode,
+          provider: settings.ai.mode === "cloud" ? "cloud" : "local",
         });
       } catch (err) {
         sendResponse({
@@ -115,6 +111,34 @@ chrome.runtime.onMessage.addListener((raw, _sender, sendResponse) => {
     return true;
   }
 
+  if (msg.type === "TEST_PROVIDER_CONNECTION") {
+    void (async () => {
+      const settings = await loadSettings();
+      const testSettings: Settings = { ...settings, ai: { ...settings.ai, mode: msg.provider } };
+      const status = await buildProvider(testSettings);
+      const result = await status.testConnection();
+      sendResponse({ type: "PROVIDER_STATUS", ...result, demoMode: settings.ai.demoMode, provider: msg.provider });
+    })().catch((error) => sendResponse({ type: "PROVIDER_STATUS", ok: false, error: String(error), demoMode: false, provider: msg.provider }));
+    return true;
+  }
+
+  if (msg.type === "SET_CLOUD_CONSENT") {
+    void (async () => {
+      const settings = await loadSettings();
+      const hostname = normalizeHostname(msg.hostname);
+      const privacy = { ...settings.privacy, cloudConsentTimestamp: Date.now() };
+      if (msg.decision === "allow-once") {
+        privacy.cloudAllowOnceFor = hostname;
+      } else {
+        privacy.cloudAllowOnceFor = undefined;
+        privacy.cloudSiteConsents = { ...privacy.cloudSiteConsents, [hostname]: msg.decision === "allow-site" ? "allow" : "deny" };
+      }
+      const ok = await saveSettings({ ...settings, privacy });
+      sendResponse({ type: "ACK", ok, error: ok ? undefined : "Could not save cloud consent." });
+    })();
+    return true;
+  }
+
   // ── P05: NL command ─────────────────────────────────────────────────────────
   if (msg.type === "NL_COMMAND") {
     const { request, tabId } = msg;
@@ -124,6 +148,7 @@ chrome.runtime.onMessage.addListener((raw, _sender, sendResponse) => {
       _nlAborts.get(tabId)?.abort("superseded");
       const ctrl = new AbortController();
       _nlAborts.set(tabId, ctrl);
+      let hostname = "";
 
       try {
         // ── Deterministic shortcuts first (no AI call) ────────────────────
@@ -199,7 +224,9 @@ chrome.runtime.onMessage.addListener((raw, _sender, sendResponse) => {
 
         // ── Build provider + run planner ──────────────────────────────────
         const settings = await loadSettings();
-        const provider = await buildProvider(settings);
+        const tab = await chrome.tabs.get(tabId);
+        hostname = tab.url ? new URL(tab.url).hostname : "";
+        const provider = await buildProvider(settings, hostname);
 
         // Hard gate: in local mode, NOTHING leaves the machine.
         // Provider routing enforces this (LocalOpenAICompatProvider never calls cloud).
@@ -213,6 +240,11 @@ chrome.runtime.onMessage.addListener((raw, _sender, sendResponse) => {
         );
 
         _nlAborts.delete(tabId);
+
+        // An Allow once permission is consumed immediately after its single call.
+        if (settings.privacy.cloudAllowOnceFor === normalizeHostname(hostname)) {
+          await saveSettings({ ...settings, privacy: { ...settings.privacy, cloudAllowOnceFor: undefined } });
+        }
 
         const descriptions = describeOperations(validated.validOps);
 
@@ -239,6 +271,7 @@ chrome.runtime.onMessage.addListener((raw, _sender, sendResponse) => {
             error: message,
             errorCode: err.code,
             hint,
+            consentHost: err.code === "consent-required" ? hostname : undefined,
           });
         } else {
           sendResponse({

@@ -114,6 +114,8 @@ export const NlCommandResultSchema = z.object({
   errorCode: z.string().optional(),
   /** Hint for the user on how to fix the error */
   hint: z.string().optional(),
+  /** Host whose page data needs a cloud-consent choice. */
+  consentHost: z.string().optional(),
   /** True if this was a shortcut (no AI call) */
   shortcut: z.boolean().optional(),
 });
@@ -141,8 +143,20 @@ export const ProviderStatusSchema = z.object({
   modelId: z.string().optional(),
   error: z.string().optional(),
   demoMode: z.boolean().default(false),
+  provider: z.enum(["local", "cloud"]).optional(),
 });
 export type ProviderStatus = z.infer<typeof ProviderStatusSchema>;
+
+export const TestProviderConnectionSchema = z.object({
+  type: z.literal("TEST_PROVIDER_CONNECTION"),
+  provider: z.enum(["local", "cloud"]),
+});
+
+export const SetCloudConsentSchema = z.object({
+  type: z.literal("SET_CLOUD_CONSENT"),
+  hostname: z.string().min(1).max(253),
+  decision: z.enum(["allow-once", "allow-site", "deny"]),
+});
 
 // ── Generic ack ───────────────────────────────────────────────────────────────
 
@@ -177,6 +191,8 @@ export const AnyMessageSchema = z.discriminatedUnion("type", [
   RevertNlPlanSchema,
   GetProviderStatusSchema,
   ProviderStatusSchema,
+  TestProviderConnectionSchema,
+  SetCloudConsentSchema,
   AckSchema,
 ]);
 export type AnyMessage = z.infer<typeof AnyMessageSchema>;

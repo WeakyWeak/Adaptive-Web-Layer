@@ -2,5 +2,11 @@
   "name": "awl-server",
   "version": "0.0.1",
   "private": true,
-  "description": "Local proxy server — added in P06"
+  "type": "module",
+  "description": "Local proxy server — added in P06",
+  "scripts": {
+    "dev": "node --experimental-strip-types --watch src/index.ts",
+    "start": "node --experimental-strip-types src/index.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  }
 }

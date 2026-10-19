@@ -102,6 +102,14 @@ body {
 .op-toggles { display: flex; flex-wrap: wrap; gap: 8px; border: 1px solid #334155; border-radius: 5px; color: #94a3b8; }
 .profile-row input:not([type="checkbox"]), .tab-panel input:not([type="file"]), .tab-panel select { background: #1e293b; border: 1px solid #334155; border-radius: 5px; color: #e2e8f0; padding: 6px; }
 .tab-panel button { margin: 6px; padding: 7px 11px; border: 1px solid #475569; border-radius: 5px; color: #e2e8f0; background: #1e293b; cursor: pointer; }
+.ai-settings, .privacy-settings { display: flex; flex-direction: column; gap: 14px; }
+.ai-settings fieldset { display: flex; flex-direction: column; gap: 8px; border: 1px solid #334155; border-radius: 6px; padding: 14px; }
+.ai-settings label { display: flex; flex-direction: column; gap: 4px; color: #cbd5e1; }
+.settings-note { color: #94a3b8; font-size: 12px; margin: 0; }
+.connection-chip { display: inline-block; width: fit-content; padding: 3px 7px; border-radius: 999px; font-size: 12px; }
+.connection-ok { color: #bbf7d0; background: #14532d; }
+.connection-error { color: #fecaca; background: #7f1d1d; }
+.danger-button { border-color: #ef4444 !important; color: #fecaca !important; }
 
 /* ── Appearance tab ─────────────────────────────────────────────────────────── */
 .appearance-tab {

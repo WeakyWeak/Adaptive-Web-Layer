@@ -12,6 +12,8 @@ export interface LLMProvider {
   generateText(opts: GenerateTextOpts): Promise<string>;
   /** Test that the provider is reachable and a model is loaded. */
   testConnection(): Promise<ConnectionStatus>;
+  /** Optional visual analysis. Only the cloud provider supports this in P06. */
+  analyzeImage?(opts: AnalyzeImageOpts): Promise<unknown>;
 }
 
 export interface GenerateStructuredOpts {
@@ -37,6 +39,10 @@ export interface ConnectionStatus {
   error?: string;
 }
 
+export interface AnalyzeImageOpts extends GenerateStructuredOpts {
+  images: Array<{ mimeType: "image/png" | "image/jpeg" | "image/webp"; data: string }>;
+}
+
 // ─── OpenAI-compatible chat completion response shape ────────────────────────
 interface ChatCompletionChoice {
   message: { role: string; content: string };
@@ -47,7 +53,7 @@ interface ChatCompletionResponse {
 }
 
 // ─── JSON schema for the Plan (for response_format) ──────────────────────────
-const PLAN_JSON_SCHEMA = {
+export const PLAN_JSON_SCHEMA = {
   type: "object",
   required: ["interpretedRequest", "operations", "preserved", "reasons", "confidence"],
   properties: {
@@ -69,6 +75,105 @@ const PLAN_JSON_SCHEMA = {
     confidence: { type: "number" },
   },
 };
+
+interface ProxyErrorBody { error?: { code?: string; message?: string } }
+interface ProxyAnalyzeResponse { data?: unknown; text?: string; modelId?: string }
+
+/**
+ * Talks only to the user's localhost proxy. Provider keys never enter this
+ * extension; the configurable token merely unlocks the local proxy.
+ */
+export class CloudProvider implements LLMProvider {
+  constructor(private readonly opts: {
+    proxyUrl: string;
+    proxyToken: string;
+    modelId: string;
+    timeoutMs?: number;
+  }) {}
+
+  private async request(body: Record<string, unknown>, signal?: AbortSignal): Promise<ProxyAnalyzeResponse> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort("timeout"), this.opts.timeoutMs ?? 30000);
+    const mergedSignal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
+    try {
+      let response: Response;
+      try {
+        response = await fetch(`${this.opts.proxyUrl.replace(/\/$/, "")}/v1/analyze`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${this.opts.proxyToken}`,
+          },
+          body: JSON.stringify({ model: this.opts.modelId, ...body }),
+          signal: mergedSignal,
+        });
+      } catch (error) {
+        if (controller.signal.aborted) throw new ProviderError("timeout", "Cloud proxy request timed out.");
+        throw new ProviderError("proxy-down", "Cannot reach the local cloud proxy.", "Start the server in server/ and check its URL in Settings.");
+      }
+      let parsed: ProxyAnalyzeResponse | ProxyErrorBody = {};
+      try { parsed = await response.json() as ProxyAnalyzeResponse | ProxyErrorBody; } catch {
+        throw new ProviderError("invalid-json", "Cloud proxy returned malformed JSON.");
+      }
+      if (!response.ok) {
+        const err = parsed as ProxyErrorBody;
+        const message = err.error?.message ?? `Cloud proxy returned HTTP ${response.status}.`;
+        if (response.status === 401) throw new ProviderError("auth", message);
+        if (response.status === 429) throw new ProviderError("rate-limit", message, "Wait a minute before trying cloud AI again.");
+        if (response.status === 408 || response.status === 504) throw new ProviderError("timeout", message);
+        if (err.error?.code === "safety_block") throw new ProviderError("safety-block", message);
+        throw new ProviderError("unknown", message);
+      }
+      return parsed as ProxyAnalyzeResponse;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  async generateStructured(opts: GenerateStructuredOpts): Promise<Plan> {
+    const response = await this.request({
+      systemPrompt: opts.systemPrompt,
+      userPrompt: opts.userPrompt,
+      responseSchema: PLAN_JSON_SCHEMA,
+      maxTokens: opts.maxTokens,
+    }, opts.signal);
+    const parsed = PlanSchema.safeParse(response.data);
+    if (!parsed.success) throw new ProviderError("invalid-json", "Cloud model returned a plan with schema errors.");
+    return parsed.data;
+  }
+
+  async generateText(opts: GenerateTextOpts): Promise<string> {
+    const response = await this.request({ systemPrompt: opts.systemPrompt, userPrompt: opts.userPrompt, maxTokens: opts.maxTokens }, opts.signal);
+    if (typeof response.text !== "string") throw new ProviderError("invalid-json", "Cloud model returned an invalid text response.");
+    return response.text;
+  }
+
+  async analyzeImage(opts: AnalyzeImageOpts): Promise<unknown> {
+    const response = await this.request({
+      systemPrompt: opts.systemPrompt,
+      userPrompt: opts.userPrompt,
+      responseSchema: PLAN_JSON_SCHEMA,
+      images: opts.images,
+      maxTokens: opts.maxTokens,
+    }, opts.signal);
+    if (response.data === undefined) throw new ProviderError("invalid-json", "Cloud model returned no visual analysis.");
+    return response.data;
+  }
+
+  async testConnection(): Promise<ConnectionStatus> {
+    const start = Date.now();
+    try {
+      const response = await fetch(`${this.opts.proxyUrl.replace(/\/$/, "")}/health`, {
+        headers: { Authorization: `Bearer ${this.opts.proxyToken}` },
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!response.ok) return { ok: false, error: `HTTP ${response.status}` };
+      return { ok: true, latencyMs: Date.now() - start, modelId: this.opts.modelId };
+    } catch (error) {
+      return { ok: false, error: (error as Error).message || "Cloud proxy unavailable" };
+    }
+  }
+}
 
 // ─── Local OpenAI-compatible provider ────────────────────────────────────────
 export class LocalOpenAICompatProvider implements LLMProvider {
