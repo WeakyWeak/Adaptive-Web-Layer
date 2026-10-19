@@ -1,10 +1,14 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const MAX_BODY_BYTES = 1_000_000;
 const MAX_REQUESTS_PER_MINUTE = 30;
 const GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models";
+// Resolve from this file so workspace scripts and direct Node starts load the
+// same server/.env, independent of the caller's working directory.
+const ENV_FILE = resolve(dirname(fileURLToPath(import.meta.url)), "../.env");
 
 interface Config {
   geminiApiKey: string;
@@ -26,7 +30,7 @@ interface AnalyzeRequest {
 function loadEnv(): Record<string, string> {
   const values: Record<string, string> = {};
   try {
-    for (const line of readFileSync(resolve(process.cwd(), "server/.env"), "utf8").split(/\r?\n/)) {
+    for (const line of readFileSync(ENV_FILE, "utf8").split(/\r?\n/)) {
       const match = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/);
       if (match && !match[1].startsWith("#")) values[match[1]] = match[2].replace(/^['"]|['"]$/g, "");
     }

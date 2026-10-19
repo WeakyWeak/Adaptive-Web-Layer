@@ -1,6 +1,6 @@
 # Adaptive Web Layer local proxy
 
-This server binds only to `127.0.0.1`. Copy `.env.example` to `.env`, fill in the values, then run `npm run dev --workspace=server`.
+This server binds only to `127.0.0.1`. Copy `server/.env.example` to `server/.env`, fill in the values, then run `npm run dev --workspace=server` from the repository root. The proxy always loads `server/.env`, regardless of where the command is launched.
 
 To find `ALLOWED_ORIGIN`, open `chrome://extensions`, enable **Developer mode**, and copy the extension ID. Its origin is `chrome-extension://<extension-id>`.
 
