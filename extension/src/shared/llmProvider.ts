@@ -95,7 +95,7 @@ export class CloudProvider implements LLMProvider {
 
   private async request(body: Record<string, unknown>, signal?: AbortSignal): Promise<ProxyAnalyzeResponse> {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort("timeout"), this.opts.timeoutMs ?? 30000);
+    const timer = setTimeout(() => controller.abort("timeout"), this.opts.timeoutMs ?? 120000);
     const mergedSignal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
     try {
       let response: Response;

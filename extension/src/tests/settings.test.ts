@@ -284,6 +284,11 @@ describe("migrateSettings", () => {
     expect(migrated.global.typography.fontSize).toBe(22);
   });
 
+  it("extends previously saved cloud requests to two minutes", () => {
+    const migrated = migrateSettings({ version: 7, ai: { cloudTimeoutMs: 30000 } });
+    expect(migrated.ai.cloudTimeoutMs).toBe(120000);
+  });
+
   it("resets invalid fields to defaults during migration", () => {
     // fontSize out of range would be coerced/rejected; Zod will apply default
     // Since we use .parse() which throws, and migrateSettings catches → returns defaults

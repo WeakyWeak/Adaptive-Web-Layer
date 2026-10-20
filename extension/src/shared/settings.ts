@@ -2,7 +2,7 @@ import { z } from "zod";
 
 // ─── Schema version ──────────────────────────────────────────────────────────
 // Bump this when you add a migration below.
-export const SETTINGS_VERSION = 7;
+export const SETTINGS_VERSION = 8;
 
 // ─── Typography preferences ──────────────────────────────────────────────────
 export const FONT_FAMILY_OPTIONS = [
@@ -100,7 +100,7 @@ export const AiSettingsSchema = z.object({
   cloudModel: z.string().min(1).max(128).default("gemini-3.8-flash"),
   cloudProxyUrl: z.string().url().default("http://127.0.0.1:8787"),
   cloudProxyToken: z.string().max(512).default(""),
-  cloudTimeoutMs: z.number().min(1000).max(120000).default(30000),
+  cloudTimeoutMs: z.number().min(1000).max(120000).default(120000),
   cloudEnabled: z.boolean().default(false),
   demoMode: z.boolean().default(false),
 });
@@ -235,6 +235,13 @@ export function matchingSiteRule(settings: Settings, hostname: string): SiteRule
 // Each fn takes the raw object from storage and returns the migrated object.
 type MigrationFn = (raw: Record<string, unknown>) => Record<string, unknown>;
 const migrations: Record<number, MigrationFn> = {
+  8: (raw) => ({
+    ...raw,
+    ai: {
+      ...(typeof raw.ai === "object" && raw.ai !== null ? raw.ai as Record<string, unknown> : {}),
+      cloudTimeoutMs: 120000,
+    },
+  }),
   7: (raw) => raw,
   6: (raw) => raw, // AI settings fields added with defaults
   5: (raw) => raw,

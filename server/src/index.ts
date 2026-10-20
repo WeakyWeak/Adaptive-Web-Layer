@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 const MAX_BODY_BYTES = 1_000_000;
 const MAX_REQUESTS_PER_MINUTE = 30;
 const CLOUD_MAX_OUTPUT_TOKENS = 4096;
+const GEMINI_TIMEOUT_MS = 120_000;
 const GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models";
 // Resolve from this file so workspace scripts and direct Node starts load the
 // same server/.env, independent of the caller's working directory.
@@ -123,7 +124,7 @@ function geminiBody(input: AnalyzeRequest): Record<string, unknown> {
   if (input.responseSchema) {
     generationConfig.responseFormat = {
       text: {
-        mimeType: "application/json",
+        mimeType: "APPLICATION_JSON",
         schema: input.responseSchema,
       },
     };
@@ -137,7 +138,7 @@ function geminiBody(input: AnalyzeRequest): Record<string, unknown> {
 
 async function callGemini(input: AnalyzeRequest, cfg: Config): Promise<{ status: number; payload: unknown }> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 30_000);
+  const timeout = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
   try {
     const response = await fetch(`${GEMINI_ENDPOINT}/${encodeURIComponent(input.model)}:generateContent`, {
       method: "POST",
