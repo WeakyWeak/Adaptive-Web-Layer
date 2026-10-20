@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 
 const MAX_BODY_BYTES = 1_000_000;
 const MAX_REQUESTS_PER_MINUTE = 30;
+const CLOUD_MAX_OUTPUT_TOKENS = 4096;
 const GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models";
 // Resolve from this file so workspace scripts and direct Node starts load the
 // same server/.env, independent of the caller's working directory.
@@ -112,8 +113,21 @@ function rateLimited(req: IncomingMessage): boolean {
 function geminiBody(input: AnalyzeRequest): Record<string, unknown> {
   const parts: Array<Record<string, unknown>> = [{ text: input.userPrompt }];
   for (const image of input.images ?? []) parts.push({ inlineData: { mimeType: image.mimeType, data: image.data } });
-  const generationConfig: Record<string, unknown> = { temperature: 0, maxOutputTokens: Math.min(Math.max(input.maxTokens ?? 1024, 1), 4096) };
-  if (input.responseSchema) { generationConfig.responseMimeType = "application/json"; generationConfig.responseSchema = input.responseSchema; }
+  const generationConfig: Record<string, unknown> = {
+    temperature: 0,
+    maxOutputTokens: Math.min(Math.max(input.maxTokens ?? CLOUD_MAX_OUTPUT_TOKENS, 1), CLOUD_MAX_OUTPUT_TOKENS),
+  };
+  // Gemini 3.8 structured output uses responseFormat.text, not the earlier
+  // responseMimeType/responseSchema fields. This makes the JSON constraint
+  // effective at the Gemini API boundary.
+  if (input.responseSchema) {
+    generationConfig.responseFormat = {
+      text: {
+        mimeType: "application/json",
+        schema: input.responseSchema,
+      },
+    };
+  }
   return {
     systemInstruction: { parts: [{ text: input.systemPrompt }] },
     contents: [{ role: "user", parts }],

@@ -74,6 +74,15 @@ describe("CloudProvider normalized failures", () => {
   const provider = () => new CloudProvider({ proxyUrl: "http://127.0.0.1:8787", proxyToken: "test", modelId: "gemini-3.8-flash", timeoutMs: 5 });
   const options = { systemPrompt: "system", userPrompt: "user" };
 
+  it("requests the 4,096-token cloud cap with a structured plan schema", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: plan }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(provider().generateStructured(options)).resolves.toEqual(plan);
+    const request = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as { maxTokens: number; responseSchema: { type: string } };
+    expect(request.maxTokens).toBe(4096);
+    expect(request.responseSchema.type).toBe("object");
+  });
+
   it.each([[401, "auth"], [429, "rate-limit"]] as const)("maps proxy HTTP %i to %s", async (status, code) => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: { message: "nope" } }), { status, headers: { "Content-Type": "application/json" } })));
     await expect(provider().generateStructured(options)).rejects.toMatchObject({ code });

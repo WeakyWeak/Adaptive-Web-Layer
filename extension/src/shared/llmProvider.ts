@@ -76,6 +76,8 @@ export const PLAN_JSON_SCHEMA = {
   },
 };
 
+const CLOUD_MAX_OUTPUT_TOKENS = 4096;
+
 interface ProxyErrorBody { error?: { code?: string; message?: string } }
 interface ProxyAnalyzeResponse { data?: unknown; text?: string; modelId?: string }
 
@@ -135,7 +137,7 @@ export class CloudProvider implements LLMProvider {
       systemPrompt: opts.systemPrompt,
       userPrompt: opts.userPrompt,
       responseSchema: PLAN_JSON_SCHEMA,
-      maxTokens: opts.maxTokens,
+      maxTokens: CLOUD_MAX_OUTPUT_TOKENS,
     }, opts.signal);
     const parsed = PlanSchema.safeParse(response.data);
     if (!parsed.success) throw new ProviderError("invalid-json", "Cloud model returned a plan with schema errors.");
@@ -143,7 +145,7 @@ export class CloudProvider implements LLMProvider {
   }
 
   async generateText(opts: GenerateTextOpts): Promise<string> {
-    const response = await this.request({ systemPrompt: opts.systemPrompt, userPrompt: opts.userPrompt, maxTokens: opts.maxTokens }, opts.signal);
+    const response = await this.request({ systemPrompt: opts.systemPrompt, userPrompt: opts.userPrompt, maxTokens: CLOUD_MAX_OUTPUT_TOKENS }, opts.signal);
     if (typeof response.text !== "string") throw new ProviderError("invalid-json", "Cloud model returned an invalid text response.");
     return response.text;
   }
@@ -154,7 +156,7 @@ export class CloudProvider implements LLMProvider {
       userPrompt: opts.userPrompt,
       responseSchema: PLAN_JSON_SCHEMA,
       images: opts.images,
-      maxTokens: opts.maxTokens,
+      maxTokens: CLOUD_MAX_OUTPUT_TOKENS,
     }, opts.signal);
     if (response.data === undefined) throw new ProviderError("invalid-json", "Cloud model returned no visual analysis.");
     return response.data;
