@@ -9,8 +9,12 @@ import { LocalOpenAICompatProvider, MockProvider } from "../shared/llmProvider";
 import { ProviderRouter } from "../shared/providerRouter";
 import { runPlanner, describeOperations } from "./planner";
 import { detectShortcut, ProviderError, formatProviderError } from "../shared/plan";
+import { registerPlanningOperations } from "./operationRegistry";
 
 console.log("[AWL background] service worker started");
+// MV3 workers do not share the content script's in-memory operation registry.
+// Register before any AI command can build or validate a plan.
+registerPlanningOperations();
 
 async function refreshBadge(tabId: number, url?: string): Promise<void> {
   if (!url) return;
