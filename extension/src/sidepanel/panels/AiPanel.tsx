@@ -1,8 +1,11 @@
 import React, { useEffect, useState } from "react";
 import type { AiJob } from "../../shared/aiJob";
+import { CLEAN_PAGE_REQUEST } from "../../shared/elementPlan";
 import type { Settings } from "../../shared/settings";
 import ConsentCard from "../ConsentCard";
 import { command, useAiJob, type ActiveTab } from "../hooks";
+import ElementList from "./ElementList";
+import SavedRules from "./SavedRules";
 
 const SOURCE_LABEL: Record<NonNullable<AiJob["source"]>, string> = {
   local: "Local AI",
@@ -61,7 +64,7 @@ function JobResult({ job, settings, onRerun, onError }: {
         {job.fallback && (
           <div className="fallback">
             <p>Suggested without AI:</p>
-            <ChangeList items={job.fallback.descriptions} />
+            <ChangeList items={[...job.fallback.descriptions, ...(job.fallback.elements ?? []).map((item) => `Hide ${item.label}`)]} />
             <button className="primary" onClick={() => void act("AI_USE_FALLBACK")}>Preview suggestion</button>
           </div>
         )}
@@ -75,6 +78,7 @@ function JobResult({ job, settings, onRerun, onError }: {
         <strong>{job.interpretedRequest ?? "Done"}</strong>
         {job.source !== "rules" && <p className="muted">No setting needed to change.</p>}
         {job.reasons?.map((reason) => <p key={reason} className="muted">{reason}</p>)}
+        <ElementList job={job} onError={onError} />
       </div>
     );
   }
@@ -89,7 +93,8 @@ function JobResult({ job, settings, onRerun, onError }: {
         {job.confidence !== undefined && <span className="muted">confidence {Math.round(job.confidence * 100)}%</span>}
       </div>
       <strong>{job.interpretedRequest}</strong>
-      <ChangeList items={job.descriptions ?? []} />
+      {(job.descriptions?.length ?? 0) > 0 && <ChangeList items={job.descriptions ?? []} />}
+      <ElementList job={job} onError={onError} />
       {job.reasons && job.reasons.length > 0 && (
         <details><summary>Why</summary>{job.reasons.map((reason) => <p key={reason} className="muted">{reason}</p>)}</details>
       )}
@@ -138,6 +143,12 @@ export default function AiPanel({ tab, settings }: { tab: ActiveTab | null; sett
         />
         <button className="primary" type="submit" disabled={!usable || !input.trim() || job?.status === "running"}>Go</button>
       </form>
+      <div className="row">
+        <button onClick={() => void run(CLEAN_PAGE_REQUEST)} disabled={!usable || job?.status === "running"} title="Hide cookie banners, pop-ups, promos and recommendation rails; keep the main content and navigation">
+          Clean this page
+        </button>
+      </div>
+      <SavedRules tab={tab} settings={settings} />
       {!usable && <p className="muted">Open a regular web page to use AI commands.</p>}
       {error && <p className="error-text" role="alert">{error}</p>}
       {job && <JobResult job={job} settings={settings} onRerun={() => void run(job.request)} onError={setError} />}

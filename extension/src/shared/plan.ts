@@ -1,14 +1,17 @@
 import { z } from "zod";
 import { PlanChangesSchema, type PlanChanges } from "./aiFields";
+import { ElementsSchema, MAX_BLOCKS, SnapshotBlockSchema } from "./elementPlan";
 import { SITE_DEFAULT_TOKEN } from "./jsonSchema";
 
 // ─── Plan returned by a model ────────────────────────────────────────────────
-// A plan is a bounded patch over the user's settings (see aiFields.ts). It is
+// A plan is a bounded patch over the user's settings (see aiFields.ts) plus,
+// optionally, snapshot ids to hide/dim/highlight (see elementPlan.ts). Both are
 // applied through the same settings resolver and Operation registry as saved
 // preferences, so there is exactly one apply path.
 export const PlanSchema = z.object({
   interpretedRequest: z.string().max(512),
   changes: PlanChangesSchema,
+  elements: ElementsSchema.optional(),
   reasons: z.array(z.string().max(512)).max(20).default([]),
   confidence: z.number().min(0).max(1).default(0.5),
 });
@@ -30,6 +33,9 @@ export function parsePlan(raw: unknown): PlanParseResult {
       .filter(([, value]) => value !== null && value !== undefined)
       .map(([key, value]) => [key, normaliseValue(value)]));
   }
+  if (candidate.elements === null || typeof candidate.elements !== "object") delete candidate.elements;
+  else candidate.elements = Object.fromEntries(Object.entries(candidate.elements as Record<string, unknown>)
+    .filter(([, value]) => Array.isArray(value)));
   if (typeof candidate.confidence === "number") candidate.confidence = Math.min(1, Math.max(0, candidate.confidence));
   const parsed = PlanSchema.safeParse(candidate);
   if (parsed.success) return { ok: true, plan: parsed.data };
@@ -134,6 +140,8 @@ export const DomSnapshotSchema = z.object({
     textLength: z.number(),
     isProtected: z.boolean(),
   })).max(50),
+  /** Candidate page blocks for element plans (P07); ids are the only handle a model gets. */
+  blocks: z.array(SnapshotBlockSchema).max(MAX_BLOCKS).default([]),
   imageCnt: z.number(),
   tableCnt: z.number(),
   codeBlockCnt: z.number(),

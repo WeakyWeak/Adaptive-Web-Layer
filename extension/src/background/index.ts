@@ -7,7 +7,7 @@ import { loadSettings, onSettingsChange, saveSettings } from "../shared/storage"
 import { isSiteEnabled, normalizeHostname, resolveAppearance, resolveTypography, type Settings } from "../shared/settings";
 import { ProviderRouter } from "../shared/providerRouter";
 import { readJob } from "../shared/aiJob";
-import { applyJob, discardJob, runAiJob, saveProfile, undoJob, useFallback } from "./aiJobs";
+import { applyJob, discardJob, runAiJob, saveProfile, setElementEnabled, undoJob, useFallback } from "./aiJobs";
 import { cancelJob, clearJob, failOrphanedJobs } from "./jobs";
 
 console.log("[AWL background] service worker started");
@@ -128,6 +128,10 @@ function handle(msg: AnyMessage, reply: Reply): boolean {
 
     case "AI_USE_FALLBACK":
       void useFallback(msg.tabId).then((error) => ack(reply, error));
+      return true;
+
+    case "AI_SET_ELEMENT":
+      void setElementEnabled(msg.tabId, msg.id, msg.enabled).then((error) => ack(reply, error));
       return true;
 
     case "AI_SAVE_PROFILE":

@@ -45,15 +45,30 @@ function nonReadingCandidates(root: Document = document): Element[] {
   return [...new Set([...directSiblings, ...landmarks])];
 }
 
-function selectedCss(selectors: string[]): string | null {
+function selectedCss(selectors: string[], declarations = "display: none !important;"): string | null {
   const safe = selectors.filter((selector) => selectorSchema.safeParse(selector).success);
-  return safe.length ? `${safe.join(", ")} { display: none !important; }` : null;
+  return safe.length ? `${safe.join(", ")} { ${declarations} }` : null;
 }
+
+const DIM_CSS = "opacity: .35 !important; filter: grayscale(.5) !important; transition: none !important;";
+const HIGHLIGHT_CSS = "outline: 3px solid #f59e0b !important; outline-offset: 3px !important; background-color: rgba(250, 204, 21, .12) !important; border-radius: 4px;";
 
 const hideElements: Operation<{ selectors: string[] }> = {
   id: "hideElements", label: "Hide selected elements", target: "content-region", protectedElements: PROTECTED_SELECTOR.split(", "),
   paramsSchema: z.object({ selectors: z.array(selectorSchema).max(30) }), validate: () => null,
   apply(ctx, params) { return css(ctx, "hideElements", selectedCss(params.selectors)); },
+};
+// P07: element plans dim or highlight blocks by selector; marker selectors in
+// preview, saved selectors after Apply. Same style-layer entry either way.
+const dimElements: Operation<{ selectors: string[] }> = {
+  id: "dimElements", label: "Dim selected elements", target: "content-region", protectedElements: [],
+  paramsSchema: z.object({ selectors: z.array(selectorSchema).max(30) }), validate: () => null,
+  apply(ctx, params) { return css(ctx, "dimElements", selectedCss(params.selectors, DIM_CSS)); },
+};
+const highlightElements: Operation<{ selectors: string[] }> = {
+  id: "highlightElements", label: "Highlight selected elements", target: "content-region", protectedElements: [],
+  paramsSchema: z.object({ selectors: z.array(selectorSchema).max(30) }), validate: () => null,
+  apply(ctx, params) { return css(ctx, "highlightElements", selectedCss(params.selectors, HIGHLIGHT_CSS)); },
 };
 const collapseSidebars: Operation<{ enabled: boolean }> = {
   id: "collapseSidebars", label: "Collapse sidebars", target: "content-region", protectedElements: PROTECTED_SELECTOR.split(", "),
@@ -119,11 +134,13 @@ const pauseAutoplay: Operation<{ enabled: boolean }> = {
   },
 };
 
-export const focusOperations: Operation<unknown>[] = [hideElements, collapseSidebars, dimNonMain, staticifyStickyHeaders, reduceMotion, reduceParallax, pauseAutoplay] as Operation<unknown>[];
+export const focusOperations: Operation<unknown>[] = [hideElements, dimElements, highlightElements, collapseSidebars, dimNonMain, staticifyStickyHeaders, reduceMotion, reduceParallax, pauseAutoplay] as Operation<unknown>[];
 export function registerFocusOps(): void { focusOperations.forEach(registerOperation); }
 export function focusPlanSteps(focus: FocusPrefs, motion: MotionPrefs) {
   return [
     { opId: "hideElements", params: { selectors: focus.hiddenSelectors.filter((selector) => !focus.preservedSelectors.includes(selector)) } },
+    { opId: "dimElements", params: { selectors: focus.dimSelectors.filter((selector) => !focus.preservedSelectors.includes(selector)) } },
+    { opId: "highlightElements", params: { selectors: focus.highlightSelectors } },
     { opId: "collapseSidebars", params: { enabled: focus.collapseSidebars } }, { opId: "dimNonMain", params: { enabled: focus.dimNonMain } }, { opId: "staticifyStickyHeaders", params: { enabled: focus.staticifyStickyHeaders } },
     { opId: "reduceMotion", params: { enabled: motion.reduceMotion } }, { opId: "reduceParallax", params: { enabled: motion.reduceParallax } }, { opId: "pauseAutoplay", params: { enabled: motion.pauseAutoplay } },
   ];

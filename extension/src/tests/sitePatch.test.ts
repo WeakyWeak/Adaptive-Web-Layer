@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { matchIntents } from "../shared/intents";
-import { defaultSettings, resolveAppearance, resolveMotion, resolveTypography, SiteRuleSchema, type Settings } from "../shared/settings";
-import { currentAiValues, exactSiteRule, restoreSiteRule, withSitePatch } from "../shared/sitePatch";
+import { defaultSettings, resolveAppearance, resolveFocus, resolveMotion, resolveTypography, SiteRuleSchema, type Settings } from "../shared/settings";
+import { currentAiValues, exactSiteRule, pruneSiteSelectors, restoreSiteRule, savedSiteSelectors, withSiteElements, withSitePatch } from "../shared/sitePatch";
 
 const base = (): Settings => defaultSettings();
 
@@ -74,5 +74,37 @@ describe("matchIntents (no-AI fallback and demo mode)", () => {
 
   it("returns null when nothing matches", () => {
     expect(matchIntents("tell me a joke", current)).toBeNull();
+  });
+});
+
+describe("withSiteElements (element preview and apply share it)", () => {
+  const none = { hide: [], dim: [], highlight: [] };
+
+  it("adds selectors to the exact-host rule without touching other sites", () => {
+    const patched = withSiteElements(base(), "example.com", { ...none, hide: ["#cookie"], highlight: [".toc"] });
+    expect(resolveFocus(patched, "example.com")).toMatchObject({ hiddenSelectors: ["#cookie"], highlightSelectors: [".toc"], dimSelectors: [] });
+    expect(resolveFocus(patched, "other.org").hiddenSelectors).toEqual([]);
+  });
+
+  it("merges with saved selectors (and a profile's) without duplicates, capped at 30", () => {
+    const settings = { ...base(), activeProfileId: "p", profiles: [...base().profiles, { id: "p", name: "P", builtIn: false, typography: resolveTypography(base(), "x"), appearance: resolveAppearance(base(), "x"), focus: resolveFocus({ ...base(), siteRules: [] }, "x") }] };
+    settings.profiles.at(-1)!.focus!.hiddenSelectors = ["#profile-ad"];
+    const once = withSiteElements(settings, "example.com", { ...none, hide: ["#cookie"] });
+    const twice = withSiteElements(once, "example.com", { ...none, hide: ["#cookie", ...Array.from({ length: 40 }, (_, i) => `#x${i}`)] });
+    const hidden = resolveFocus(twice, "example.com").hiddenSelectors;
+    expect(hidden.slice(0, 2)).toEqual(["#profile-ad", "#cookie"]);
+    expect(hidden).toHaveLength(30);
+  });
+
+  it("is a no-op for an empty plan", () => {
+    const settings = base();
+    expect(withSiteElements(settings, "example.com", none)).toBe(settings);
+  });
+
+  it("prunes stale selectors from every list and keeps the rest", () => {
+    const patched = withSiteElements(base(), "example.com", { hide: ["#gone", "#here"], dim: ["#gone"], highlight: [".toc"] });
+    expect(savedSiteSelectors(patched, "example.com")).toEqual(["#gone", "#here", ".toc"]);
+    const pruned = pruneSiteSelectors(patched, "example.com", ["#gone"]);
+    expect(resolveFocus(pruned, "example.com")).toMatchObject({ hiddenSelectors: ["#here"], dimSelectors: [], highlightSelectors: [".toc"] });
   });
 });

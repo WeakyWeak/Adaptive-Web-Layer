@@ -12,6 +12,31 @@ export function robustSelector(element: Element): string | null {
   return classes.length ? uniqueSelector(`${element.tagName.toLowerCase()}${classes.map((item) => `.${CSS.escape(item)}`).join("")}`, element) : null;
 }
 
+/**
+ * A selector that should still find `element` after a reload: a robust one when
+ * possible, otherwise a short child path from the nearest ancestor that has one
+ * (or from body). Returns null if nothing short and unique exists.
+ */
+export function persistentSelector(element: Element): string | null {
+  const direct = robustSelector(element);
+  if (direct) return direct;
+  const steps: string[] = [];
+  let current: Element = element;
+  for (let depth = 0; depth < 8 && current.parentElement; depth++) {
+    const parent: Element = current.parentElement;
+    const tag = current.tagName.toLowerCase();
+    const sameTag = Array.from(parent.children).filter((child) => child.tagName === current.tagName);
+    steps.unshift(sameTag.length > 1 ? `${tag}:nth-of-type(${sameTag.indexOf(current) + 1})` : tag);
+    const anchor = parent === document.body ? "body" : robustSelector(parent);
+    if (anchor) {
+      const selector = `${anchor} > ${steps.join(" > ")}`;
+      return selector.length <= 512 ? uniqueSelector(selector, element) : null;
+    }
+    current = parent;
+  }
+  return null;
+}
+
 export class ElementPicker {
   private readonly root: ShadowRoot; private readonly marker: HTMLDivElement; private readonly shield: HTMLDivElement; private current: Element | null = null;
   constructor(private readonly onSelect: (selector: string, action: "hide" | "preserve") => void, private readonly onCancel: () => void) {

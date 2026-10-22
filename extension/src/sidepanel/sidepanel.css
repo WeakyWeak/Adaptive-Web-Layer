@@ -91,3 +91,19 @@ button.primary { background: var(--accent); border-color: var(--accent); color: 
 
 details summary { cursor: pointer; color: var(--muted); font-size: 12px; }
 footer { display: flex; justify-content: flex-end; }
+
+/* P07: element plans */
+.elements { display: flex; flex-direction: column; gap: 6px; }
+.element-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.element { padding: 5px 6px; border-radius: 6px; border: 1px solid transparent; }
+.element:hover, .element:focus-within { border-color: var(--accent); background: var(--surface); }
+.element.off .element-label { color: var(--muted); text-decoration: line-through; }
+.element.pending { border-color: #a16207; border-style: dashed; }
+.element label { display: flex; gap: 6px; align-items: baseline; cursor: pointer; }
+.element-label { overflow-wrap: anywhere; }
+.element .warning { margin: 2px 0 0 22px; }
+.badge.action-hide { background: #7f1d1d; color: #fecaca; }
+.badge.action-dim { background: #334155; color: #cbd5e1; }
+.badge.action-highlight { background: #713f12; color: #fef08a; }
+.saved-rules { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+details summary { cursor: pointer; color: var(--muted); font-size: 12px; }

@@ -8,11 +8,14 @@ import { registerAppearanceOps } from "./appearanceOps";
 import { detectExistingDark, shouldSkipDarkTheme } from "./darkDetection";
 import { injectBundledFonts } from "./fontInjector";
 import { registerFocusOps } from "./focusOps";
-import { ElementPicker, focusCandidates } from "./elementPicker";
-import { buildDomSnapshot } from "./domSnapshot";
+import { ElementPicker, focusCandidates, persistentSelector } from "./elementPicker";
+import { buildDomSnapshot, resolveSnapshotId } from "./domSnapshot";
+import { ElementOutline } from "./elementOutline";
+import { clearPreviewMarks, previewSelectors } from "./previewMarks";
 import type { ApplyContext } from "../shared/registry";
 import type { PlanChanges } from "../shared/aiFields";
-import { withSitePatch } from "../shared/sitePatch";
+import type { PreviewElements } from "../shared/elementPlan";
+import { savedSiteSelectors, withSiteElements, withSitePatch } from "../shared/sitePatch";
 
 // Detect restricted pages (chrome://, chrome-extension://, Web Store, etc.)
 function isRestrictedPage(): boolean {
@@ -50,6 +53,11 @@ if (isRestrictedPage()) {
   // through the same resolution + applier as saved settings, so DOM mutations
   // re-apply it instead of overwriting it.
   let previewChanges: PlanChanges | null = null;
+  // P07: previewed element plan (snapshot ids). `peekId` is temporarily shown
+  // while the side panel hovers a hidden item, so its outline is visible.
+  let previewElements: PreviewElements | null = null;
+  let peekId: string | null = null;
+  const outline = new ElementOutline();
 
   // Build apply context from current settings
   function makeCtx(applyToWholePage: boolean): ApplyContext {
@@ -71,7 +79,8 @@ if (isRestrictedPage()) {
         observer = null;
         return;
       }
-      const effective = previewChanges ? withSitePatch(settings, hostname, previewChanges) : settings;
+      const patched = previewChanges ? withSitePatch(settings, hostname, previewChanges) : settings;
+      const effective = previewElements ? withSiteElements(patched, hostname, previewSelectors(previewElements, peekId)) : patched;
       const prefs = resolveTypography(effective, hostname);
       const appearance = resolveAppearance(effective, hostname);
       const darkStatus = detectExistingDark();
@@ -87,7 +96,7 @@ if (isRestrictedPage()) {
       if (!observer && document.documentElement) {
         observer = new MutationObserver((records) => {
           const hasPageChanges = records.some((record) => record.type === "attributes" || Array.from(record.addedNodes).some((node) =>
-            node instanceof Element && !node.matches("style[data-awl]") && !node.closest("style[data-awl]")));
+            node instanceof Element && !node.matches("style[data-awl], [data-awl-overlay], [data-awl-picker]") && !node.closest("style[data-awl]")));
           if (!hasPageChanges || applyTimer) return;
           applyTimer = setTimeout(() => {
             applyTimer = null;
@@ -224,7 +233,44 @@ if (isRestrictedPage()) {
     // ── P06R: AI preview overlay ────────────────────────────────────────────
     if (msg.type === "SET_PREVIEW") {
       previewChanges = msg.changes;
+      previewElements = msg.elements ?? null;
+      peekId = null;
+      outline.hide();
+      if (!previewElements) clearPreviewMarks();
       void applyFromStorage(currentSettings ?? undefined).then(() => sendResponse({ type: "ACK", ok: true }));
+      return true;
+    }
+
+    // ── P07: element plans ──────────────────────────────────────────────────
+    if (msg.type === "OUTLINE_ELEMENT") {
+      const element = msg.id ? resolveSnapshotId(msg.id) : undefined;
+      const peek = msg.id && previewElements?.hide.includes(msg.id) ? msg.id : null;
+      const reapply = peek !== peekId;
+      peekId = peek;
+      void (reapply ? applyFromStorage(currentSettings ?? undefined) : Promise.resolve()).then(() => {
+        if (element) outline.show(element); else outline.hide();
+        sendResponse({ type: "ACK", ok: Boolean(element) || !msg.id });
+      });
+      return true;
+    }
+
+    if (msg.type === "RESOLVE_SELECTORS") {
+      const selectors = Object.fromEntries(msg.ids.map((id) => {
+        const element = resolveSnapshotId(id);
+        return [id, element ? persistentSelector(element) : null];
+      }));
+      sendResponse({ type: "SELECTORS", selectors });
+      return false;
+    }
+
+    if (msg.type === "CHECK_SAVED_SELECTORS") {
+      void loadSettings().then((settings) => {
+        const saved = savedSiteSelectors(settings, hostname);
+        const stale = saved.filter((selector) => {
+          try { return document.querySelector(selector) === null; } catch { return true; }
+        });
+        sendResponse({ type: "SAVED_SELECTORS", total: saved.length, stale });
+      }).catch((error) => sendResponse({ type: "ACK", ok: false, error: String(error) }));
       return true;
     }
 

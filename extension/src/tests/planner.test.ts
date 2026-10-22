@@ -17,6 +17,7 @@ const snapshot: DomSnapshot = {
   tableCnt: 0,
   codeBlockCnt: 3,
   tokenEstimate: 800,
+  blocks: [],
 };
 const current = currentAiValues(defaultSettings(), "localhost");
 const context = { request: "Make the text larger and keep code colours", snapshot, current };

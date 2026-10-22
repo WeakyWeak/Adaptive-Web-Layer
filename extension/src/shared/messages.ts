@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { FONT_FAMILY_OPTIONS } from "./settings";
 import { DomSnapshotSchema } from "./plan";
+import { PreviewElementsSchema } from "./elementPlan";
 
 // ─── Typed message protocol (Zod discriminated union) ───────────────────────
 // All messages between popup ↔ content script ↔ background use this schema.
@@ -96,14 +97,28 @@ export const AiJobActionSchema = z.object({
   tabId: TabIdSchema,
 });
 export const AiSaveProfileSchema = z.object({ type: z.literal("AI_SAVE_PROFILE"), tabId: TabIdSchema, name: z.string().trim().min(1).max(64) });
+/** P07: per-item toggle in a preview; enabling a protected hide is the user's confirmation. */
+export const AiSetElementSchema = z.object({ type: z.literal("AI_SET_ELEMENT"), tabId: TabIdSchema, id: z.string().min(1).max(32), enabled: z.boolean() });
 
 // ── P06R: Preview overlay (background → content) ────────────────────────────
 export const SetPreviewSchema = z.object({
   type: z.literal("SET_PREVIEW"),
   /** Changes previewed on top of saved settings; null clears the preview. */
   changes: z.record(z.union([z.string(), z.number(), z.boolean()])).nullable(),
+  /** Snapshot ids previewed as hidden/dimmed/highlighted (P07). */
+  elements: PreviewElementsSchema.optional(),
 });
 export type SetPreview = z.infer<typeof SetPreviewSchema>;
+
+// ── P07: element plans (background/side panel → content) ───────────────────
+/** Turn snapshot ids into selectors that survive a reload (for Apply). */
+export const ResolveSelectorsSchema = z.object({ type: z.literal("RESOLVE_SELECTORS"), ids: z.array(z.string().min(1).max(32)).max(60) });
+export const SelectorsSchema = z.object({ type: z.literal("SELECTORS"), selectors: z.record(z.string().nullable()) });
+/** Outline one snapshot block on the page (null clears the outline). */
+export const OutlineElementSchema = z.object({ type: z.literal("OUTLINE_ELEMENT"), id: z.string().min(1).max(32).nullable() });
+/** Which saved element selectors no longer match anything on this page. */
+export const CheckSavedSelectorsSchema = z.object({ type: z.literal("CHECK_SAVED_SELECTORS") });
+export const SavedSelectorsSchema = z.object({ type: z.literal("SAVED_SELECTORS"), total: z.number(), stale: z.array(z.string()) });
 
 // ── P05: Provider status (popup → background) ─────────────────────────────────
 export const GetProviderStatusSchema = z.object({ type: z.literal("GET_PROVIDER_STATUS") });
@@ -160,7 +175,13 @@ export const AnyMessageSchema = z.discriminatedUnion("type", [
   AiRunSchema,
   AiJobActionSchema,
   AiSaveProfileSchema,
+  AiSetElementSchema,
   SetPreviewSchema,
+  ResolveSelectorsSchema,
+  SelectorsSchema,
+  OutlineElementSchema,
+  CheckSavedSelectorsSchema,
+  SavedSelectorsSchema,
   GetProviderStatusSchema,
   ProviderStatusSchema,
   TestProviderConnectionSchema,

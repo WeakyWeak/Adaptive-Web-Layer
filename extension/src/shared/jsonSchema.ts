@@ -5,6 +5,7 @@
 
 import { z } from "zod";
 import { AI_FIELDS, type AiField } from "./aiFields";
+import { ELEMENT_ACTIONS, MAX_HIDDEN } from "./elementPlan";
 
 export type JsonSchema = Record<string, unknown>;
 export type SchemaDialect = "llamacpp" | "gemini" | "gemini-openapi" | "anthropic";
@@ -39,11 +40,32 @@ export function fieldJsonSchema(field: AiField): JsonSchema {
   throw new Error(`AI field "${field.key}" uses an unsupported Zod type`);
 }
 
-export function planJsonSchema(): JsonSchema {
+/**
+ * Element lists constrain ids to the snapshot's blocks, so grammar-constrained
+ * models (llama.cpp) cannot invent one; the validator re-checks them anyway.
+ */
+function elementsJsonSchema(blockIds: readonly string[]): JsonSchema {
+  const list = (action: string): JsonSchema => ({ type: "array", maxItems: MAX_HIDDEN, items: { type: "string", enum: [...blockIds] }, description: `Block ids to ${action}` });
   return {
     type: "object",
     additionalProperties: false,
-    required: ["interpretedRequest", "changes", "reasons", "confidence"],
+    required: [...ELEMENT_ACTIONS],
+    properties: Object.fromEntries(ELEMENT_ACTIONS.map((action) => [action, list(action)])),
+    description: "Page blocks to hide, dim or highlight, by id from BLOCKS. Empty lists unless the user asked about parts of the page",
+  };
+}
+
+/**
+ * The plan schema; `elements` is offered only when the page has candidate blocks.
+ * It is required (lists may be empty): llama.cpp's grammar emits optional
+ * properties after all required ones, where a model never reaches them.
+ */
+export function planJsonSchema(blockIds: readonly string[] = []): JsonSchema {
+  const withElements = blockIds.length > 0;
+  return {
+    type: "object",
+    additionalProperties: false,
+    required: withElements ? ["interpretedRequest", "changes", "elements", "reasons", "confidence"] : ["interpretedRequest", "changes", "reasons", "confidence"],
     properties: {
       interpretedRequest: { type: "string", maxLength: 200, description: "What you understood the user to want" },
       changes: {
@@ -52,6 +74,7 @@ export function planJsonSchema(): JsonSchema {
         properties: Object.fromEntries(AI_FIELDS.map((field) => [field.key, fieldJsonSchema(field)])),
         description: "Only the settings that should change; omit everything else",
       },
+      ...(withElements ? { elements: elementsJsonSchema(blockIds) } : {}),
       reasons: { type: "array", maxItems: 8, items: { type: "string", maxLength: 200 } },
       confidence: { type: "number", minimum: 0, maximum: 1 },
     },

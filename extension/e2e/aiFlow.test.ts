@@ -113,3 +113,64 @@ test("local mode streams a plan from an OpenAI-compatible server on 127.0.0.1", 
     llama.close();
   }
 });
+
+const display = (page: Page, selector: string) => page.locator(selector).first().evaluate((element) => getComputedStyle(element).display);
+
+test("clean this page: preview, confirm protected items, apply, reload, undo (demo rules)", async () => {
+  const { context, worker, extensionId } = await launch();
+  try {
+    await worker.evaluate(async () => {
+      await chrome.storage.local.set({ awl_settings: { version: 9, enabled: true, ai: { demoMode: true }, profiles: [], siteRules: [] } });
+    });
+    const page = await context.newPage();
+    await page.goto(`${FIXTURES_URL}/clutter.html`, { waitUntil: "load" });
+    const panel = await context.newPage();
+    await panel.goto(`chrome-extension://${extensionId}/sidepanel/index.html`);
+    const tabId = await worker.evaluate(async (url) => (await chrome.tabs.query({ url: `${url}/clutter.html` }))[0]?.id, FIXTURES_URL) as number;
+
+    // The real side panel acts on the window's active tab: make that the fixture.
+    await page.bringToFront();
+    const clean = panel.getByRole("button", { name: "Clean this page" });
+    await expect(clean).toBeEnabled();
+    await clean.click();
+    await expect.poll(() => jobStatus(panel, tabId)).toBe("preview");
+    await expect.poll(() => display(page, ".promo-bar")).toBe("none");
+    expect(await display(page, ".recommended-rail")).toBe("none");
+    // Protected: the cookie dialog and the newsletter form wait for an explicit OK.
+    expect(await display(page, "#cookie-banner")).not.toBe("none");
+    expect(await display(page, ".newsletter-overlay")).not.toBe("none");
+    // Must survive: navigation, table of contents, article.
+    for (const selector of ["nav", ".toc", "article"]) expect(await display(page, selector)).not.toBe("none");
+
+    const items = await panel.evaluate(async (id) => (await chrome.storage.session.get(`awl_job_${id}`))[`awl_job_${id}`].elements as Array<{ id: string; protect?: string; enabled: boolean }>, tabId);
+    const pending = items.filter((item) => item.protect && !item.enabled);
+    expect(pending).toHaveLength(2);
+    await expect(panel.getByText("2 items need your OK")).toBeVisible();
+    for (const item of pending) expect((await send(panel, { type: "AI_SET_ELEMENT", tabId, id: item.id, enabled: true })).ok).toBe(true);
+    await expect.poll(() => display(page, "#cookie-banner")).toBe("none");
+    expect(await display(page, ".newsletter-overlay")).toBe("none");
+
+    // Hovering a hidden item "peeks" it and outlines it in a Shadow DOM overlay.
+    await panel.getByText("Recommended for you", { exact: false }).first().hover();
+    await expect.poll(() => display(page, ".recommended-rail")).not.toBe("none");
+    expect(await page.locator("[data-awl-overlay]").count()).toBe(1);
+    await panel.locator("h1").hover();
+    await expect.poll(() => display(page, ".recommended-rail")).toBe("none");
+    expect(await page.locator("[data-awl-overlay]").count()).toBe(0);
+
+    expect((await send(panel, { type: "AI_APPLY", tabId })).ok).toBe(true);
+    await expect.poll(() => jobStatus(panel, tabId)).toBe("applied");
+    expect(await page.locator("[data-awl-preview]").count()).toBe(0);
+    await page.reload({ waitUntil: "load" });
+    // Saved selectors, no model involved: the job record is untouched by the reload.
+    for (const selector of [".promo-bar", ".recommended-rail", "#cookie-banner", ".newsletter-overlay"]) await expect.poll(() => display(page, selector)).toBe("none");
+    for (const selector of ["nav", ".toc", "article"]) expect(await display(page, selector)).not.toBe("none");
+    const saved = await worker.evaluate(async (id) => new Promise((resolve) => chrome.tabs.sendMessage(id, { type: "CHECK_SAVED_SELECTORS" }, resolve)), tabId);
+    expect(saved).toEqual({ type: "SAVED_SELECTORS", total: 4, stale: [] });
+
+    expect((await send(panel, { type: "AI_UNDO", tabId })).ok).toBe(true);
+    for (const selector of [".promo-bar", ".recommended-rail", "#cookie-banner", ".newsletter-overlay"]) await expect.poll(() => display(page, selector)).not.toBe("none");
+  } finally {
+    await context.close();
+  }
+});

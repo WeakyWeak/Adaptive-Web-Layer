@@ -35,12 +35,17 @@ export const AppearancePrefsSchema = z.object({
 });
 export type AppearancePrefs = z.infer<typeof AppearancePrefsSchema>;
 
+export const MAX_SAVED_SELECTORS = 30;
+
 export const FocusPrefsSchema = z.object({
   collapseSidebars: z.boolean().default(false),
   dimNonMain: z.boolean().default(false),
   staticifyStickyHeaders: z.boolean().default(false),
-  hiddenSelectors: z.array(z.string().min(1).max(512)).max(30).default([]),
-  preservedSelectors: z.array(z.string().min(1).max(512)).max(30).default([]),
+  hiddenSelectors: z.array(z.string().min(1).max(512)).max(MAX_SAVED_SELECTORS).default([]),
+  preservedSelectors: z.array(z.string().min(1).max(512)).max(MAX_SAVED_SELECTORS).default([]),
+  // P07: elements dimmed or highlighted by "Clean this page" (or by hand).
+  dimSelectors: z.array(z.string().min(1).max(512)).max(MAX_SAVED_SELECTORS).default([]),
+  highlightSelectors: z.array(z.string().min(1).max(512)).max(MAX_SAVED_SELECTORS).default([]),
 });
 export type FocusPrefs = z.infer<typeof FocusPrefsSchema>;
 

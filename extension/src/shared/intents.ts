@@ -4,8 +4,9 @@
 
 import { z } from "zod";
 import { aiField, type PlanChanges } from "./aiFields";
+import { suggestElements } from "./elementPlan";
 import { numberBounds } from "./jsonSchema";
-import type { Plan } from "./plan";
+import type { DomSnapshot, Plan } from "./plan";
 
 type Current = Record<string, string | number | boolean>;
 
@@ -16,6 +17,8 @@ interface IntentRule {
 }
 
 const num = (current: Current, key: string): number => Number(current[key]);
+
+const DIM_DISTRACTIONS = "dim distractions";
 
 const RULES: readonly IntentRule[] = [
   { pattern: /\b(dyslexi\w*)\b/, label: "dyslexia-friendly text", changes: (c) => ({ fontFamily: "Lexend", letterSpacing: 1, wordSpacing: 2, lineHeight: Math.max(num(c, "lineHeight"), 1.8) }) },
@@ -30,7 +33,7 @@ const RULES: readonly IntentRule[] = [
   { pattern: /\b(wider|full width|wide)\b/, label: "wider content", changes: (c) => ({ maxContentWidth: num(c, "maxContentWidth") + 200 }) },
   { pattern: /\b(motion|animations?|moving|parallax)\b/, label: "less motion", changes: () => ({ reduceMotion: true, reduceParallax: true }) },
   { pattern: /\b(autoplay|auto-play|videos?)\b/, label: "pause autoplay", changes: () => ({ pauseAutoplay: true }) },
-  { pattern: /\b(distract\w*|clutter\w*|focus)\b/, label: "dim distractions", changes: () => ({ dimNonMain: true }) },
+  { pattern: /\b(distract\w*|clutter\w*|focus)\b/, label: DIM_DISTRACTIONS, changes: () => ({ dimNonMain: true }) },
   { pattern: /\bsticky\b/, label: "unstick headers", changes: () => ({ staticifyStickyHeaders: true }) },
   { pattern: /\b(gr[ae]yscale|no colou?rs?|black and white)\b/, label: "greyscale", changes: () => ({ saturation: 0 }) },
   { pattern: /\b(more|higher|increase)\b.*\bcontrast\b/, label: "more contrast", changes: (c) => ({ contrast: num(c, "contrast") + 0.3 }) },
@@ -49,9 +52,9 @@ function clamp(key: string, value: string | number | boolean): string | number |
   return field.schema.safeParse(next).success ? next : undefined;
 }
 
-export function matchIntents(request: string, current: Current): Plan | null {
+export function matchIntents(request: string, current: Current, skip: readonly string[] = []): Plan | null {
   const text = request.toLowerCase();
-  const matched = RULES.filter((rule) => rule.pattern.test(text));
+  const matched = RULES.filter((rule) => rule.pattern.test(text) && !skip.includes(rule.label));
   if (matched.length === 0) return null;
   const changes: PlanChanges = {};
   for (const rule of matched) {
@@ -65,6 +68,24 @@ export function matchIntents(request: string, current: Current): Plan | null {
     interpretedRequest: matched.map((rule) => rule.label).join(", "),
     changes,
     reasons: matched.map((rule) => `Matched "${rule.label}" without using a model.`),
+    confidence: 0.6,
+  };
+}
+
+/**
+ * Settings intents plus clutter blocks picked by keyword (no model). When the
+ * request is a clean-up, hiding named clutter replaces the blunter "dim
+ * everything outside the main content" setting.
+ */
+export function deterministicPlan(request: string, current: Current, snapshot: DomSnapshot): Plan | null {
+  const elements = suggestElements(request, snapshot);
+  if (!elements) return matchIntents(request, current);
+  const settingsPlan = matchIntents(request, current, [DIM_DISTRACTIONS]);
+  return {
+    interpretedRequest: settingsPlan ? `${settingsPlan.interpretedRequest}, hide clutter` : "hide clutter",
+    changes: settingsPlan?.changes ?? {},
+    elements,
+    reasons: [...(settingsPlan?.reasons ?? []), `Picked ${elements.hide.length} clutter block(s) by name, without using a model.`],
     confidence: 0.6,
   };
 }

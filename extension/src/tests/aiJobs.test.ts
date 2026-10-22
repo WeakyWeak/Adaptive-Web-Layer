@@ -2,17 +2,27 @@
 // run → preview (overlay only) → apply (saved) → undo (restored).
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { applyJob, discardJob, runAiJob, saveProfile, undoJob, useFallback } from "../background/aiJobs";
+import { applyJob, discardJob, runAiJob, saveProfile, setElementEnabled, undoJob, useFallback } from "../background/aiJobs";
+import { CLEAN_PAGE_REQUEST, type SnapshotBlock } from "../shared/elementPlan";
 import { cancelJob } from "../background/jobs";
 import { readJob } from "../shared/aiJob";
-import { defaultSettings, resolveTypography, type Settings } from "../shared/settings";
+import { defaultSettings, resolveFocus, resolveTypography, type Settings } from "../shared/settings";
 import { loadSettings, saveSettings } from "../shared/storage";
 
 const TAB = 7;
+const block = (id: string, extra: Partial<SnapshotBlock>): SnapshotBlock => ({ id, tag: "div", hints: "", text: "", box: [0, 0, 100, 10], fixed: false, area: 3, linkDensity: 0, main: false, ...extra });
 const snapshot = {
   url: "https://example.com/a", title: "A", contentRegion: "main", headings: [], landmarks: [],
   textBlocks: [], imageCnt: 0, tableCnt: 0, codeBlockCnt: 1, tokenEstimate: 10,
+  blocks: [
+    block("s1", { tag: "nav", protect: "navigation" }),
+    block("s2", { hints: "promo-bar", fixed: true }),
+    block("s3", { tag: "main", main: true, area: 50 }),
+    block("s4", { hints: "cookie-banner", role: "dialog", fixed: true, protect: "dialog" }),
+  ],
 };
+/** What the content script would answer for RESOLVE_SELECTORS. */
+let selectorsById: Record<string, string | null> = {};
 
 function memoryArea() {
   const data: Record<string, unknown> = {};
@@ -24,7 +34,7 @@ function memoryArea() {
   };
 }
 
-let previews: unknown[];
+let previews: Array<{ changes: unknown; elements?: { hide: string[] } }>;
 
 function installChrome(): void {
   previews = [];
@@ -35,7 +45,8 @@ function installChrome(): void {
       get: vi.fn(async () => ({ id: TAB, url: "https://example.com/a" })),
       sendMessage: vi.fn((_tabId: number, message: { type: string; changes?: unknown }, reply: (response: unknown) => void) => {
         if (message.type === "GET_DOM_SNAPSHOT") reply({ type: "DOM_SNAPSHOT", payload: snapshot });
-        else { if (message.type === "SET_PREVIEW") previews.push(message.changes); reply({ type: "ACK", ok: true }); }
+        else if (message.type === "RESOLVE_SELECTORS") reply({ type: "SELECTORS", selectors: selectorsById });
+        else { if (message.type === "SET_PREVIEW") previews.push(message as never); reply({ type: "ACK", ok: true }); }
       }),
     },
   });
@@ -57,12 +68,12 @@ describe("AI job lifecycle", () => {
 
     const previewed = await readJob(TAB);
     expect(previewed).toMatchObject({ status: "preview", source: "demo", changes: { fontSize: 20 } });
-    expect(previews.at(-1)).toEqual({ fontSize: 20 });
+    expect(previews.at(-1)?.changes).toEqual({ fontSize: 20 });
     expect(await fontSizeOnSite()).toBe(16); // preview is not saved
 
     expect(await applyJob(TAB)).toBeNull();
     expect(await fontSizeOnSite()).toBe(20);
-    expect(previews.at(-1)).toBeNull(); // overlay cleared once the rule holds the change
+    expect(previews.at(-1)?.changes).toBeNull(); // overlay cleared once the rule holds the change
     expect((await readJob(TAB))?.status).toBe("applied");
 
     expect(await undoJob(TAB)).toBeNull();
@@ -74,7 +85,7 @@ describe("AI job lifecycle", () => {
     await useSettings((settings) => ({ ...settings, ai: { ...settings.ai, demoMode: true } }));
     await runAiJob(TAB, "dark mode");
     await discardJob(TAB);
-    expect(previews.at(-1)).toBeNull();
+    expect(previews.at(-1)?.changes).toBeNull();
     expect(await readJob(TAB)).toBeNull();
   });
 
@@ -125,5 +136,55 @@ describe("AI job lifecycle", () => {
     (chrome.tabs.get as ReturnType<typeof vi.fn>).mockResolvedValue({ id: TAB, url: "chrome://settings" });
     await runAiJob(TAB, "bigger text");
     expect((await readJob(TAB))?.error?.code).toBe("unsupported");
+  });
+});
+
+describe("element plans (P07)", () => {
+  const hiddenOnSite = async () => resolveFocus(await loadSettings(), "example.com").hiddenSelectors;
+  beforeEach(() => { selectorsById = { s2: "div.promo-bar", s4: "#cookie-banner" }; });
+
+  it("previews clutter, waits for confirmation on protected items, applies, undoes", async () => {
+    await useSettings((settings) => ({ ...settings, ai: { ...settings.ai, demoMode: true } }));
+    await runAiJob(TAB, CLEAN_PAGE_REQUEST);
+
+    const job = await readJob(TAB);
+    expect(job?.status).toBe("preview");
+    expect(job?.elements).toEqual([
+      expect.objectContaining({ id: "s2", action: "hide", enabled: true }),
+      expect.objectContaining({ id: "s4", action: "hide", enabled: false, protect: "dialog" }),
+    ]);
+    expect(previews.at(-1)?.elements?.hide).toEqual(["s2"]); // the dialog is not hidden yet
+
+    expect(await setElementEnabled(TAB, "s4", true)).toBeNull(); // the user's confirmation
+    expect(previews.at(-1)?.elements?.hide).toEqual(["s2", "s4"]);
+    expect(await hiddenOnSite()).toEqual([]); // still only a preview
+
+    expect(await applyJob(TAB)).toBeNull();
+    expect(await hiddenOnSite()).toEqual(["div.promo-bar", "#cookie-banner"]);
+    expect(previews.at(-1)?.changes).toBeNull();
+
+    expect(await undoJob(TAB)).toBeNull();
+    expect(await hiddenOnSite()).toEqual([]);
+  });
+
+  it("keeps existing saved selectors and reports items it cannot save", async () => {
+    await useSettings((settings) => ({ ...settings, ai: { ...settings.ai, demoMode: true }, siteRules: [{ hostname: "example.com", enabled: true, includeSubdomains: false, profileId: null, disabledOperations: [], typography: {}, appearance: {}, focus: { hiddenSelectors: ["#old-ad"] } }] }));
+    selectorsById = { s2: null };
+    await runAiJob(TAB, CLEAN_PAGE_REQUEST);
+    expect(await applyJob(TAB)).toBeNull();
+    expect(await hiddenOnSite()).toEqual(["#old-ad"]);
+    expect((await readJob(TAB))?.unsaved).toEqual([expect.stringContaining("div")]);
+  });
+
+  it("refuses toggles outside a preview", async () => {
+    expect(await setElementEnabled(TAB, "s2", true)).toContain("not part of the current preview");
+  });
+
+  it("offers a keyword clean-up when the model is unreachable", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => { throw new TypeError("connection refused"); }));
+    await runAiJob(TAB, CLEAN_PAGE_REQUEST);
+    expect((await readJob(TAB))?.fallback?.elements?.map((item) => item.id)).toEqual(["s2", "s4"]);
+    expect(await useFallback(TAB)).toBeNull();
+    expect(previews.at(-1)?.elements?.hide).toEqual(["s2"]);
   });
 });

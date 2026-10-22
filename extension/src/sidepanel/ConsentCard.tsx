@@ -31,7 +31,8 @@ export default function ConsentCard({ hostname, backend, onDecided }: {
       <h3>Use cloud AI on {hostname}?</h3>
       <p>
         This sends your command, your current reading settings and a short summary of the page
-        (title, headings, counts of images/tables/code) to your local proxy and then to{" "}
+        (title, headings, counts of images/tables/code, and up to 60 page blocks such as banners
+        and sidebars with their class names and first ~80 characters of text) to your local proxy and then to{" "}
         {backend === "anthropic" ? "Anthropic (Claude)" : "Google (Gemini)"}. It does not send form values, selected text or screenshots.
       </p>
       <p>{BACKEND_NOTICE[backend]}</p>

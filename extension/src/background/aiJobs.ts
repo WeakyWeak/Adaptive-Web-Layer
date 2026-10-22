@@ -4,11 +4,12 @@
 
 import { describeChanges, type PlanChanges } from "../shared/aiFields";
 import { readJob, type AiJob } from "../shared/aiJob";
-import { matchIntents } from "../shared/intents";
+import { previewElementsOf, validateElements, type ElementItem, type ElementReview, type PreviewElements } from "../shared/elementPlan";
+import { deterministicPlan } from "../shared/intents";
 import { detectShortcut, DomSnapshotSchema, formatProviderError, toProviderError, type DomSnapshot, type Plan } from "../shared/plan";
 import { ProviderRouter } from "../shared/providerRouter";
 import { cloudConsentFor, isSiteEnabled, normalizeHostname, resolveAppearance, resolveFocus, resolveMotion, resolveTypography, SiteRuleSchema } from "../shared/settings";
-import { currentAiValues, exactSiteRule, restoreSiteRule, withSitePatch } from "../shared/sitePatch";
+import { currentAiValues, exactSiteRule, restoreSiteRule, withSiteElements, withSitePatch, type SiteElements } from "../shared/sitePatch";
 import { loadSettings, saveSettings } from "../shared/storage";
 import { beginJob, clearJob, endJob, patchJob, writeJob } from "./jobs";
 import { runPlanner } from "./planner";
@@ -28,7 +29,11 @@ function tabMessage<T>(tabId: number, message: unknown): Promise<T | null> {
   });
 }
 
-const setPreview = (tabId: number, changes: PlanChanges | null) => tabMessage(tabId, { type: "SET_PREVIEW", changes });
+/** Show changes + element items on the page without saving; null clears the preview. */
+function setPreview(tabId: number, preview: { changes: PlanChanges; elements?: readonly ElementItem[] } | null) {
+  const elements: PreviewElements | undefined = preview?.elements?.length ? previewElementsOf(preview.elements) : undefined;
+  return tabMessage(tabId, { type: "SET_PREVIEW", changes: preview?.changes ?? null, elements });
+}
 
 async function tabHostname(tabId: number): Promise<string | null> {
   try {
@@ -91,9 +96,10 @@ export async function runAiJob(tabId: number, request: string): Promise<void> {
   const signal = beginJob(tabId);
   const current = currentAiValues(settings, hostname);
   let job = await writeJob(base);
+  let snapshot: DomSnapshot | null = null;
   await setPreview(tabId, null);
   try {
-    const snapshot = await snapshotOf(tabId);
+    snapshot = await snapshotOf(tabId);
     if (!snapshot) {
       await writeJob(errorJob(job, "no-content-script", "Could not read this page.", "Reload the page (the extension may have been updated after it loaded)."));
       return;
@@ -101,11 +107,13 @@ export async function runAiJob(tabId: number, request: string): Promise<void> {
 
     let plan: Plan;
     let changes: PlanChanges;
+    let elements: ElementReview;
     let source: AiJob["source"];
     const warnings: string[] = [];
     if (settings.ai.demoMode) {
-      plan = matchIntents(request, current) ?? DEMO_PLAN;
+      plan = deterministicPlan(request, current, snapshot) ?? DEMO_PLAN;
       changes = plan.changes;
+      elements = validateElements(plan.elements, snapshot);
       source = "demo";
     } else {
       const ai = settings.ai;
@@ -124,6 +132,7 @@ export async function runAiJob(tabId: number, request: string): Promise<void> {
       });
       plan = result.plan;
       changes = result.changes;
+      elements = result.elements;
       source = router.usedProvider ?? undefined;
       if (result.retried) warnings.push("The first reply was invalid; this is the model's corrected plan.");
       warnings.push(...result.notes);
@@ -137,13 +146,13 @@ export async function runAiJob(tabId: number, request: string): Promise<void> {
       await patchJob(tabId, job.id, { status: "cancelled", stage: "Cancelled" });
       return;
     }
-    const summary = { source, interpretedRequest: plan.interpretedRequest, reasons: plan.reasons, confidence: plan.confidence, warnings };
-    if (Object.keys(changes).length === 0) {
+    const summary = { source, interpretedRequest: plan.interpretedRequest, reasons: plan.reasons, confidence: plan.confidence, warnings, rejectedElements: elements.rejected };
+    if (Object.keys(changes).length === 0 && elements.items.length === 0) {
       await patchJob(tabId, job.id, { ...summary, status: "nothing", stage: "Nothing to change", changes: {} });
       return;
     }
-    await setPreview(tabId, changes);
-    await patchJob(tabId, job.id, { ...summary, status: "preview", stage: "Previewing", changes, descriptions: describeChanges(changes) });
+    await setPreview(tabId, { changes, elements: elements.items });
+    await patchJob(tabId, job.id, { ...summary, status: "preview", stage: "Previewing", changes, descriptions: describeChanges(changes), elements: elements.items });
   } catch (caught) {
     const error = toProviderError(caught);
     if (error.code === "cancelled") {
@@ -151,27 +160,57 @@ export async function runAiJob(tabId: number, request: string): Promise<void> {
       return;
     }
     const { message, hint } = formatProviderError(error);
-    const suggestion = matchIntents(request, current);
+    const suggestion = snapshot ? deterministicPlan(request, current, snapshot) : null;
+    const suggestedItems = suggestion && snapshot ? validateElements(suggestion.elements, snapshot).items : [];
+    const useful = suggestion && (Object.keys(suggestion.changes).length > 0 || suggestedItems.length > 0);
     await patchJob(tabId, job.id, {
       status: "error",
       stage: "Failed",
       error: { code: error.code, message, hint },
-      fallback: suggestion && Object.keys(suggestion.changes).length > 0 ? { changes: suggestion.changes, descriptions: describeChanges(suggestion.changes) } : undefined,
+      fallback: useful ? { changes: suggestion.changes, descriptions: describeChanges(suggestion.changes), elements: suggestedItems } : undefined,
     });
   } finally {
     endJob(tabId, signal);
   }
 }
 
+/** Turn the enabled element items into selectors that survive a reload. */
+async function savedSelectors(tabId: number, items: readonly ElementItem[]): Promise<{ elements: SiteElements; unsaved: string[] } | null> {
+  const enabled = items.filter((item) => item.enabled);
+  const elements: SiteElements = { hide: [], dim: [], highlight: [] };
+  if (enabled.length === 0) return { elements, unsaved: [] };
+  const response = await tabMessage<{ selectors?: Record<string, string | null> }>(tabId, { type: "RESOLVE_SELECTORS", ids: enabled.map((item) => item.id) });
+  if (!response?.selectors) return null;
+  const unsaved: string[] = [];
+  for (const item of enabled) {
+    const selector = response.selectors[item.id];
+    if (selector) elements[item.action].push(selector); else unsaved.push(item.label);
+  }
+  return { elements, unsaved };
+}
+
 export async function applyJob(tabId: number): Promise<string | null> {
   const job = await readJob(tabId);
   if (job?.status !== "preview" || !job.changes) return "There is no preview to apply.";
+  const resolved = await savedSelectors(tabId, job.elements ?? []);
+  if (!resolved) return "Could not read the page to save the element changes. Reload it and try again.";
   const settings = await loadSettings();
   const previousRule = exactSiteRule(settings, job.hostname) ?? null;
-  if (!await saveSettings(withSitePatch(settings, job.hostname, job.changes))) return "Could not save the changes.";
+  const next = withSiteElements(withSitePatch(settings, job.hostname, job.changes), job.hostname, resolved.elements);
+  if (!await saveSettings(next)) return "Could not save the changes.";
   // The saved rule now carries the changes; drop the overlay so nothing is doubled.
   await setPreview(tabId, null);
-  await writeJob({ ...job, status: "applied", stage: "Applied to this site", previousRule });
+  await writeJob({ ...job, status: "applied", stage: "Applied to this site", previousRule, unsaved: resolved.unsaved.length ? resolved.unsaved : undefined });
+  return null;
+}
+
+/** Per-item toggle in a preview. Enabling a protected hide is the user's explicit confirmation. */
+export async function setElementEnabled(tabId: number, id: string, enabled: boolean): Promise<string | null> {
+  const job = await readJob(tabId);
+  if (job?.status !== "preview" || !job.elements?.some((item) => item.id === id)) return "That element is not part of the current preview.";
+  const elements = job.elements.map((item) => item.id === id ? { ...item, enabled } : item);
+  await setPreview(tabId, { changes: job.changes ?? {}, elements });
+  await writeJob({ ...job, elements });
   return null;
 }
 
@@ -192,8 +231,8 @@ export async function discardJob(tabId: number): Promise<void> {
 export async function useFallback(tabId: number): Promise<string | null> {
   const job = await readJob(tabId);
   if (!job?.fallback) return "There is no suggestion to preview.";
-  await setPreview(tabId, job.fallback.changes);
-  await writeJob({ ...job, status: "preview", stage: "Previewing suggestion", source: "rules", changes: job.fallback.changes, descriptions: job.fallback.descriptions, interpretedRequest: job.request, fallback: undefined, error: undefined });
+  await setPreview(tabId, { changes: job.fallback.changes, elements: job.fallback.elements });
+  await writeJob({ ...job, status: "preview", stage: "Previewing suggestion", source: "rules", changes: job.fallback.changes, descriptions: job.fallback.descriptions, elements: job.fallback.elements, interpretedRequest: job.request, fallback: undefined, error: undefined });
   return null;
 }
 

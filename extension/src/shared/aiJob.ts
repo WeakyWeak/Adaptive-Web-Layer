@@ -3,6 +3,7 @@
 // close and reopen (and the MV3 worker can restart) without losing the result.
 
 import { z } from "zod";
+import { ElementItemSchema, RejectedElementSchema } from "./elementPlan";
 import { SiteRuleSchema } from "./settings";
 
 const ChangesSchema = z.record(z.union([z.string(), z.number(), z.boolean()]));
@@ -31,12 +32,18 @@ export const AiJobSchema = z.object({
   interpretedRequest: z.string().optional(),
   changes: ChangesSchema.optional(),
   descriptions: z.array(z.string()).optional(),
+  /** Page blocks the plan hides/dims/highlights; protected hides start disabled. */
+  elements: z.array(ElementItemSchema).optional(),
+  /** Element items the validator refused, with reasons (never dropped silently). */
+  rejectedElements: z.array(RejectedElementSchema).optional(),
+  /** Element items that could not be turned into a saved selector on Apply. */
+  unsaved: z.array(z.string()).optional(),
   reasons: z.array(z.string()).optional(),
   confidence: z.number().optional(),
   warnings: z.array(z.string()).optional(),
   error: z.object({ code: z.string(), message: z.string(), hint: z.string() }).optional(),
   /** Keyword-based suggestion offered when AI fails. */
-  fallback: z.object({ changes: ChangesSchema, descriptions: z.array(z.string()) }).optional(),
+  fallback: z.object({ changes: ChangesSchema, descriptions: z.array(z.string()), elements: z.array(ElementItemSchema).optional() }).optional(),
   /** Exact-host site rule before Apply; restored by Undo (null = there was none). */
   previousRule: SiteRuleSchema.nullable().optional(),
 });

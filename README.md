@@ -42,6 +42,7 @@ Pages:
 - http://localhost:4173/code-highlight.html — syntax-highlighted code
 - http://localhost:4173/responsive-dynamic.html — responsive + dynamic JS content
 - http://localhost:4173/native-dark.html — native dark theme and fixed/sticky controls
+- http://localhost:4173/clutter.html — article under a cookie banner, newsletter pop-up, promo bar and "Recommended" rail (try **Clean this page** in the side panel)
 
 ## AI setup (local, cloud, hybrid)
 
@@ -67,7 +68,7 @@ Then in **Settings → AI**:
 ### Measure a model before the demo
 
 ```bash
-npm run eval:planner -- --target local                     # llama-server on :8080
+npm run eval:planner -- --target local                     # llama-server on :8080 (also scores element precision/recall)
 npm run eval:planner -- --target cloud --backend gemini --model gemini-3.5-flash-lite --token <PROXY_TOKEN>
 ```
 It prints the valid-plan rate, accuracy on 25 cases (including prompt-injection pages) and p50/p95 latency, and writes a report to `extension/eval/results/`.
