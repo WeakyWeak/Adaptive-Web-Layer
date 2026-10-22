@@ -1,47 +1,74 @@
 import { z } from "zod";
+import { PlanChangesSchema, type PlanChanges } from "./aiFields";
+import { SITE_DEFAULT_TOKEN } from "./jsonSchema";
 
-// ─── Plan operation (one step in an AI-generated plan) ────────────────────────
-// Models return op ids and params, NEVER selectors.
-// targetRef is an optional stable element id from the DOM snapshot Map.
-export const PlanOperationSchema = z.object({
-  opId: z.string().min(1).max(64),
-  params: z.record(z.unknown()),
-  targetRef: z.string().optional(), // stable id from DOM snapshot
-});
-export type PlanOperation = z.infer<typeof PlanOperationSchema>;
-
-// ─── Full plan returned by the AI model ──────────────────────────────────────
+// ─── Plan returned by a model ────────────────────────────────────────────────
+// A plan is a bounded patch over the user's settings (see aiFields.ts). It is
+// applied through the same settings resolver and Operation registry as saved
+// preferences, so there is exactly one apply path.
 export const PlanSchema = z.object({
   interpretedRequest: z.string().max(512),
-  operations: z.array(PlanOperationSchema).max(20),
-  preserved: z.array(z.string()).max(20).default([]),
-  reasons: z.array(z.string().max(256)).max(20).default([]),
-  confidence: z.number().min(0).max(1).default(0.8),
+  changes: PlanChangesSchema,
+  reasons: z.array(z.string().max(512)).max(20).default([]),
+  confidence: z.number().min(0).max(1).default(0.5),
 });
 export type Plan = z.infer<typeof PlanSchema>;
 
-// ─── Validated plan (after the planner's allowlist + bounds checks) ────────────
-export interface ValidatedPlan {
-  plan: Plan;
-  /** Operations that passed validation */
-  validOps: PlanOperation[];
-  /** Validation errors (op-level) */
-  errors: string[];
+export type PlanParseResult =
+  | { ok: true; plan: Plan }
+  | { ok: false; errors: string[] };
+
+/**
+ * Validate an untrusted model reply. Small models often wrap numbers in strings
+ * or return the "default" enum token; normalise those before strict parsing.
+ */
+export function parsePlan(raw: unknown): PlanParseResult {
+  if (!raw || typeof raw !== "object") return { ok: false, errors: ["Reply is not a JSON object."] };
+  const candidate = { ...(raw as Record<string, unknown>) };
+  if (candidate.changes && typeof candidate.changes === "object") {
+    candidate.changes = Object.fromEntries(Object.entries(candidate.changes as Record<string, unknown>)
+      .filter(([, value]) => value !== null && value !== undefined)
+      .map(([key, value]) => [key, normaliseValue(value)]));
+  }
+  if (typeof candidate.confidence === "number") candidate.confidence = Math.min(1, Math.max(0, candidate.confidence));
+  const parsed = PlanSchema.safeParse(candidate);
+  if (parsed.success) return { ok: true, plan: parsed.data };
+  return { ok: false, errors: parsed.error.issues.map((issue) => `${issue.path.join(".") || "plan"}: ${issue.message}`) };
 }
 
-// ─── Plan provider errors ─────────────────────────────────────────────────────
+function normaliseValue(value: unknown): unknown {
+  if (value === SITE_DEFAULT_TOKEN) return "";
+  if (typeof value === "string" && value.trim() !== "" && Number.isFinite(Number(value))) return Number(value);
+  if (value === "true") return true;
+  if (value === "false") return false;
+  return value;
+}
+
+/** Drop changes that equal the current value; they would do nothing. */
+export function effectiveChanges(changes: PlanChanges, current: Record<string, unknown>): PlanChanges {
+  return Object.fromEntries(Object.entries(changes).filter(([key, value]) => current[key] !== value));
+}
+
+// ─── Provider errors ─────────────────────────────────────────────────────────
 export type ProviderErrorCode =
   | "server-not-running"
   | "model-not-loaded"
   | "auth"
   | "timeout"
+  | "cancelled"
   | "invalid-json"
+  | "invalid-plan"
+  | "no-changes"
   | "context-overflow"
   | "network"
   | "rate-limit"
   | "proxy-down"
+  | "proxy-origin"
+  | "not-configured"
   | "safety-block"
   | "consent-required"
+  | "consent-denied"
+  | "unsupported"
   | "unknown";
 
 export class ProviderError extends Error {
@@ -55,45 +82,47 @@ export class ProviderError extends Error {
   }
 }
 
-/** Human-readable message + optional recovery hint for the UI. */
-export function formatProviderError(err: ProviderError): {
-  message: string;
-  hint: string;
-} {
-  const hints: Record<ProviderErrorCode, string> = {
-    "server-not-running":
-      "Start llama-server: `llama-server -m <model.gguf> -c 8192 --port 8080`",
-    "model-not-loaded":
-      "The model may not be loaded. Check your llama-server logs.",
-    auth: "Check your API key. For llama-server use --api-key; for Ollama set OLLAMA_ORIGINS.",
-    timeout:
-      "The model took too long to respond. Try a smaller context size or shorter input.",
-    "invalid-json":
-      "The model returned an unexpected response. Try again or switch model.",
-    "context-overflow":
-      "Your request exceeded the model's context limit. Try a shorter page or simpler request.",
-    network: "Network error communicating with the local AI server.",
-    "rate-limit": "The cloud proxy is temporarily rate-limited. Wait a minute and try again.",
-    "proxy-down": "The local cloud proxy is not running. Start it, then try again.",
-    "safety-block": "The cloud provider declined this request for safety reasons.",
-    "consent-required": "Cloud AI needs your consent before any page data is sent.",
-    unknown: "An unexpected error occurred.",
-  };
-  return {
-    message: err.message,
-    hint: err.hint ?? hints[err.code] ?? hints.unknown,
-  };
+const HINTS: Record<ProviderErrorCode, string> = {
+  "server-not-running": "Start llama-server, e.g. `llama-server -m <model.gguf> -ngl 99 -c 8192 --jinja --port 8080`.",
+  "model-not-loaded": "The model may still be loading. Check the llama-server logs.",
+  auth: "Check the API key or proxy token in Settings → AI.",
+  timeout: "The model took too long. Try a smaller model or a shorter request.",
+  cancelled: "The request was cancelled.",
+  "invalid-json": "The model returned an unexpected response. Try again or switch model.",
+  "invalid-plan": "The model's plan broke the safety rules twice. Try rephrasing, or use the suggested changes.",
+  "no-changes": "Nothing needs to change for that request with the current settings.",
+  "context-overflow": "The request exceeded the model's context limit. Raise -c on llama-server or use a shorter page.",
+  network: "Network error while talking to the AI server.",
+  "rate-limit": "The cloud provider is rate-limited. Wait a minute and try again.",
+  "proxy-down": "Start the local proxy: `npm run dev --workspace=server`.",
+  "proxy-origin": "The proxy rejected this extension's origin. Check ALLOWED_ORIGIN in server/.env.",
+  "not-configured": "Add the provider's API key to server/.env and restart the proxy.",
+  "safety-block": "The cloud provider declined this request.",
+  "consent-required": "Cloud AI needs your consent before any page data is sent.",
+  "consent-denied": "Cloud AI is denied for this site. Change it in Settings → Privacy & Consent.",
+  unsupported: "This provider does not support that request.",
+  unknown: "An unexpected error occurred.",
+};
+
+/** Human-readable message + recovery hint for the UI. */
+export function formatProviderError(err: ProviderError): { message: string; hint: string } {
+  return { message: err.message, hint: err.hint ?? HINTS[err.code] ?? HINTS.unknown };
+}
+
+export function toProviderError(err: unknown): ProviderError {
+  if (err instanceof ProviderError) return err;
+  return new ProviderError("unknown", err instanceof Error ? err.message : String(err));
 }
 
 // ─── DOM snapshot (built by content script, sent to background) ───────────────
 export const DomSnapshotSchema = z.object({
   url: z.string(),
   title: z.string(),
-  contentRegion: z.string(), // CSS selector for the main content region
+  contentRegion: z.string(),
   headings: z.array(z.object({
     level: z.number(),
     text: z.string().max(200),
-    id: z.string(), // stable snapshot id
+    id: z.string(),
   })).max(30),
   landmarks: z.array(z.object({
     role: z.string(),
@@ -108,9 +137,6 @@ export const DomSnapshotSchema = z.object({
   imageCnt: z.number(),
   tableCnt: z.number(),
   codeBlockCnt: z.number(),
-  /** Current applied operations (opId → param summary) */
-  currentOps: z.record(z.string()).default({}),
-  /** Token count estimate */
   tokenEstimate: z.number(),
 });
 export type DomSnapshot = z.infer<typeof DomSnapshotSchema>;
@@ -128,9 +154,8 @@ export function detectShortcut(input: string): ShortcutAction | null {
   if (t === "reset" || t === "reset page" || t === "revert") return { type: "reset" };
   if (t === "turn off" || t === "disable" || t === "turn off for this site") return { type: "turn-off" };
 
-  // "save this as <name>" / "save as <name>"
-  // Use original input to preserve name casing
-  const saveMatch = input.trim().match(/^[Ss]ave(?:\s+this)?\s+as\s+(.+)$/i);
+  // "save this as <name>" / "save as <name>"; keep the original casing.
+  const saveMatch = input.trim().match(/^save(?:\s+this)?\s+as\s+(.+)$/i);
   if (saveMatch) {
     const name = saveMatch[1].trim();
     if (name.length >= 1 && name.length <= 64) return { type: "save-profile", name };

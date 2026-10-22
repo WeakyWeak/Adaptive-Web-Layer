@@ -1,0 +1,70 @@
+// ─── Deterministic intents (no model) ────────────────────────────────────────
+// Keyword rules that turn common requests into a bounded settings patch. Used
+// by Demo mode and as the fallback suggestion when AI is unavailable.
+
+import { z } from "zod";
+import { aiField, type PlanChanges } from "./aiFields";
+import { numberBounds } from "./jsonSchema";
+import type { Plan } from "./plan";
+
+type Current = Record<string, string | number | boolean>;
+
+interface IntentRule {
+  pattern: RegExp;
+  label: string;
+  changes: (current: Current) => PlanChanges;
+}
+
+const num = (current: Current, key: string): number => Number(current[key]);
+
+const RULES: readonly IntentRule[] = [
+  { pattern: /\b(dyslexi\w*)\b/, label: "dyslexia-friendly text", changes: (c) => ({ fontFamily: "Lexend", letterSpacing: 1, wordSpacing: 2, lineHeight: Math.max(num(c, "lineHeight"), 1.8) }) },
+  { pattern: /\b(bigger|larger|increase|enlarge)\b.*\b(text|font|letters?|size)\b|\b(text|font)\b.*\b(bigger|larger)\b/, label: "larger text", changes: (c) => ({ fontSize: num(c, "fontSize") + 4 }) },
+  { pattern: /\b(smaller|decrease|reduce)\b.*\b(text|font)\b|\b(text|font)\b.*\bsmaller\b/, label: "smaller text", changes: (c) => ({ fontSize: num(c, "fontSize") - 2 }) },
+  { pattern: /\b(easier to read|more readable|readability|hard to read)\b/, label: "easier reading", changes: (c) => ({ fontSize: Math.max(num(c, "fontSize"), 18), lineHeight: Math.max(num(c, "lineHeight"), 1.7), maxContentWidth: 760 }) },
+  { pattern: /\b(dark|night)\b/, label: "dark theme", changes: () => ({ theme: "dark" }) },
+  { pattern: /\b(sepia|warm|paper)\b/, label: "sepia theme", changes: () => ({ theme: "sepia" }) },
+  { pattern: /\blight (mode|theme)\b/, label: "light theme", changes: () => ({ theme: "light" }) },
+  { pattern: /\b(line height|line spacing|more spac\w*|airier|cramped)\b/, label: "more line spacing", changes: (c) => ({ lineHeight: num(c, "lineHeight") + 0.3 }) },
+  { pattern: /\b(narrow(er)?|shorter lines|column)\b/, label: "narrower column", changes: (c) => ({ maxContentWidth: Math.min(num(c, "maxContentWidth"), 720) }) },
+  { pattern: /\b(wider|full width|wide)\b/, label: "wider content", changes: (c) => ({ maxContentWidth: num(c, "maxContentWidth") + 200 }) },
+  { pattern: /\b(motion|animations?|moving|parallax)\b/, label: "less motion", changes: () => ({ reduceMotion: true, reduceParallax: true }) },
+  { pattern: /\b(autoplay|auto-play|videos?)\b/, label: "pause autoplay", changes: () => ({ pauseAutoplay: true }) },
+  { pattern: /\b(distract\w*|clutter\w*|focus)\b/, label: "dim distractions", changes: () => ({ dimNonMain: true }) },
+  { pattern: /\bsticky\b/, label: "unstick headers", changes: () => ({ staticifyStickyHeaders: true }) },
+  { pattern: /\b(gr[ae]yscale|no colou?rs?|black and white)\b/, label: "greyscale", changes: () => ({ saturation: 0 }) },
+  { pattern: /\b(more|higher|increase)\b.*\bcontrast\b/, label: "more contrast", changes: (c) => ({ contrast: num(c, "contrast") + 0.3 }) },
+  { pattern: /\b(too bright|dimmer|less bright)\b/, label: "dimmer", changes: (c) => ({ brightness: num(c, "brightness") - 0.15 }) },
+];
+
+/** Clamp a proposed value into its field's Zod bounds; drop it if still invalid. */
+function clamp(key: string, value: string | number | boolean): string | number | boolean | undefined {
+  const field = aiField(key);
+  if (!field) return undefined;
+  let next = value;
+  if (typeof value === "number" && field.schema instanceof z.ZodNumber) {
+    const { minimum = -Infinity, maximum = Infinity } = numberBounds(field.schema);
+    next = Math.round(Math.min(maximum, Math.max(minimum, value)) * 100) / 100;
+  }
+  return field.schema.safeParse(next).success ? next : undefined;
+}
+
+export function matchIntents(request: string, current: Current): Plan | null {
+  const text = request.toLowerCase();
+  const matched = RULES.filter((rule) => rule.pattern.test(text));
+  if (matched.length === 0) return null;
+  const changes: PlanChanges = {};
+  for (const rule of matched) {
+    for (const [key, value] of Object.entries(rule.changes(current))) {
+      if (value === undefined) continue;
+      const safe = clamp(key, value);
+      if (safe !== undefined) changes[key] = safe;
+    }
+  }
+  return {
+    interpretedRequest: matched.map((rule) => rule.label).join(", "),
+    changes,
+    reasons: matched.map((rule) => `Matched "${rule.label}" without using a model.`),
+    confidence: 0.6,
+  };
+}

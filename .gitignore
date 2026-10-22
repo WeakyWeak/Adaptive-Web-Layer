@@ -14,3 +14,4 @@ dist
 *.local
 *.log
 .DS_Store
+extension/eval/results

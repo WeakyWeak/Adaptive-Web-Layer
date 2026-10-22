@@ -17,6 +17,6 @@
     "noFallthroughCasesInSwitch": true,
     "types": ["chrome", "node", "vitest/globals"]
   },
-  "include": ["src", "popup", "options", "vite.config.ts", "vite.content.config.ts"],
+  "include": ["src", "scripts", "popup", "options", "sidepanel", "vite.config.ts", "vite.content.config.ts"],
   "exclude": ["node_modules", "dist"]
 }

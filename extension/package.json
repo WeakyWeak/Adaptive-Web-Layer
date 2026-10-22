@@ -10,7 +10,8 @@
     "test": "npx vitest run",
     "test:watch": "npx vitest",
     "lint": "npx eslint src --ext .ts,.tsx",
-    "e2e": "npx playwright test"
+    "e2e": "npx playwright test",
+    "eval:planner": "npx vite-node scripts/evalPlanner.ts --"
   },
   "dependencies": {
     "react": "^18.3.1",

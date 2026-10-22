@@ -1,9 +1,17 @@
 # Adaptive Web Layer local proxy
 
-This server binds only to `127.0.0.1`. Copy `server/.env.example` to `server/.env`, fill in the values, then run `npm run dev --workspace=server` from the repository root. The proxy always loads `server/.env`, regardless of where the command is launched.
+Holds cloud API keys and forwards structured requests to **Gemini** or **Claude**. It binds only to `127.0.0.1`.
 
-To find `ALLOWED_ORIGIN`, open `chrome://extensions`, enable **Developer mode**, and copy the extension ID. Its origin is `chrome-extension://<extension-id>`.
+```bash
+cp server/.env.example server/.env   # fill in PROXY_TOKEN and at least one provider key
+npm run proxy                        # from the repo root (= npm run dev --workspace=server)
+npm run smoke                        # live check that each configured backend returns valid JSON
+```
 
-`PROXY_TOKEN` authorizes requests to this localhost proxy only. It is not a Gemini or Sarvam key and cannot grant access to either provider by itself. Provider keys remain in `server/.env`; no provider key is sent to or bundled in the extension.
+Then in the extension, open **Settings → AI**. Paste the same `PROXY_TOKEN`, pick the provider (Gemini or Claude), and press **Test cloud proxy**.
 
-The proxy does not log request bodies, images, prompts, tokens, or keys. It applies a body-size limit, a per-minute local rate limit, request timeouts, bearer authentication, and the configured CORS origin.
+- `PROXY_TOKEN` authorizes requests to this localhost proxy only. It is not a provider key. Provider keys never reach the extension.
+- CORS accepts `chrome-extension://` origins and rejects every web origin. Set `ALLOWED_ORIGIN` to pin specific extension ids (see `chrome://extensions` with Developer mode on).
+- `/v1/analyze` streams NDJSON: `{"type":"ping"}` every 5 s, then exactly one `{"type":"result",...}` or `{"type":"error",...}` line. This keeps the extension's service worker alive during slow model calls.
+- Claude uses the official `@anthropic-ai/sdk` with structured outputs (`output_config.format`). Effort comes from `ANTHROPIC_EFFORT` (default `low`). Models that support it get the server-side refusal fallback.
+- The proxy does not log request bodies, images, prompts, tokens or keys. It enforces a 1 MB body limit, 30 requests/minute, bearer auth and request timeouts.

@@ -8,7 +8,7 @@ export default function PrivacyTab({ settings, update, clear }: { settings: Sett
   };
   const entries = Object.entries(settings.privacy.cloudSiteConsents);
   return <section className="tab-panel privacy-settings"><h2 className="tab-heading">Privacy &amp; Consent</h2>
-    <p>Cloud AI is optional. Before cloud use, Adaptive Web Layer asks which page data the request will send. Gemini free-tier services may retain inputs, use them to improve models, and allow human review.</p>
+    <p>Cloud AI is optional. Before cloud use, Adaptive Web Layer shows exactly which page data the request will send. Gemini free-tier services may retain inputs, use them to improve models, and allow human review. Claude requests are processed under your Anthropic API account terms.</p>
     <h3>Saved site decisions</h3>
     {entries.length === 0 ? <p className="settings-note">No saved cloud consent decisions.</p> : entries.map(([hostname, decision]) => <div className="profile-row" key={hostname}><strong>{hostname}</strong><span>{decision === "allow" ? "Allowed" : "Denied"}</span><button onClick={() => revoke(hostname)}>Revoke</button></div>)}
     <button className="danger-button" onClick={() => void clear()}>Clear all data and caches</button>

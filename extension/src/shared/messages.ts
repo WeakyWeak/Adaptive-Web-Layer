@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { FONT_FAMILY_OPTIONS } from "./settings";
-import { DomSnapshotSchema, PlanOperationSchema, PlanSchema } from "./plan";
+import { DomSnapshotSchema } from "./plan";
 
 // ─── Typed message protocol (Zod discriminated union) ───────────────────────
 // All messages between popup ↔ content script ↔ background use this schema.
@@ -86,53 +86,24 @@ export const DomSnapshotResponseSchema = z.object({
   payload: DomSnapshotSchema,
 });
 
-// ── P05: NL command (popup → background) ─────────────────────────────────────
-export const NlCommandSchema = z.object({
-  type: z.literal("NL_COMMAND"),
-  request: z.string().min(1).max(1000),
-  /** tabId of the page to snapshot and apply to */
-  tabId: z.number(),
+// ── P06R: AI commands (side panel → background) ─────────────────────────────
+// Results are not returned in the reply: the background writes the job record
+// to chrome.storage.session and the side panel renders whatever is stored.
+const TabIdSchema = z.number().int().nonnegative();
+export const AiRunSchema = z.object({ type: z.literal("AI_RUN"), tabId: TabIdSchema, request: z.string().trim().min(1).max(1000) });
+export const AiJobActionSchema = z.object({
+  type: z.enum(["AI_CANCEL", "AI_APPLY", "AI_DISCARD", "AI_UNDO", "AI_USE_FALLBACK"]),
+  tabId: TabIdSchema,
 });
-export type NlCommand = z.infer<typeof NlCommandSchema>;
+export const AiSaveProfileSchema = z.object({ type: z.literal("AI_SAVE_PROFILE"), tabId: TabIdSchema, name: z.string().trim().min(1).max(64) });
 
-export const NlCommandResultSchema = z.object({
-  type: z.literal("NL_COMMAND_RESULT"),
-  ok: z.boolean(),
-  /** The validated plan (if ok) */
-  plan: PlanSchema.optional(),
-  /** Human-readable descriptions of each operation */
-  descriptions: z.array(z.string()).optional(),
-  /** Interpreted request string */
-  interpretedRequest: z.string().optional(),
-  /** Confidence score */
-  confidence: z.number().optional(),
-  /** Validation warnings (non-fatal) */
-  warnings: z.array(z.string()).optional(),
-  /** Error message (if !ok) */
-  error: z.string().optional(),
-  /** Error code for typed handling */
-  errorCode: z.string().optional(),
-  /** Hint for the user on how to fix the error */
-  hint: z.string().optional(),
-  /** Host whose page data needs a cloud-consent choice. */
-  consentHost: z.string().optional(),
-  /** True if this was a shortcut (no AI call) */
-  shortcut: z.boolean().optional(),
+// ── P06R: Preview overlay (background → content) ────────────────────────────
+export const SetPreviewSchema = z.object({
+  type: z.literal("SET_PREVIEW"),
+  /** Changes previewed on top of saved settings; null clears the preview. */
+  changes: z.record(z.union([z.string(), z.number(), z.boolean()])).nullable(),
 });
-export type NlCommandResult = z.infer<typeof NlCommandResultSchema>;
-
-// ── P05: Apply / revert NL plan (background → content via popup) ─────────────
-export const ApplyNlPlanSchema = z.object({
-  type: z.literal("APPLY_NL_PLAN"),
-  operations: z.array(PlanOperationSchema),
-  /** If true: temporary preview; if false: committed apply */
-  preview: z.boolean().default(true),
-});
-export type ApplyNlPlan = z.infer<typeof ApplyNlPlanSchema>;
-
-export const RevertNlPlanSchema = z.object({
-  type: z.literal("REVERT_NL_PLAN"),
-});
+export type SetPreview = z.infer<typeof SetPreviewSchema>;
 
 // ── P05: Provider status (popup → background) ─────────────────────────────────
 export const GetProviderStatusSchema = z.object({ type: z.literal("GET_PROVIDER_STATUS") });
@@ -151,6 +122,7 @@ export const TestProviderConnectionSchema = z.object({
   type: z.literal("TEST_PROVIDER_CONNECTION"),
   provider: z.enum(["local", "cloud"]),
 });
+export type TestProviderConnection = z.infer<typeof TestProviderConnectionSchema>;
 
 export const SetCloudConsentSchema = z.object({
   type: z.literal("SET_CLOUD_CONSENT"),
@@ -185,10 +157,10 @@ export const AnyMessageSchema = z.discriminatedUnion("type", [
   // P05
   GetDomSnapshotSchema,
   DomSnapshotResponseSchema,
-  NlCommandSchema,
-  NlCommandResultSchema,
-  ApplyNlPlanSchema,
-  RevertNlPlanSchema,
+  AiRunSchema,
+  AiJobActionSchema,
+  AiSaveProfileSchema,
+  SetPreviewSchema,
   GetProviderStatusSchema,
   ProviderStatusSchema,
   TestProviderConnectionSchema,

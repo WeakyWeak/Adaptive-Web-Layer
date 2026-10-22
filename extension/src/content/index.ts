@@ -10,7 +10,9 @@ import { injectBundledFonts } from "./fontInjector";
 import { registerFocusOps } from "./focusOps";
 import { ElementPicker, focusCandidates } from "./elementPicker";
 import { buildDomSnapshot } from "./domSnapshot";
-import { applyPlan, type ApplyContext, type Revert } from "../shared/registry";
+import type { ApplyContext } from "../shared/registry";
+import type { PlanChanges } from "../shared/aiFields";
+import { withSitePatch } from "../shared/sitePatch";
 
 // Detect restricted pages (chrome://, chrome-extension://, Web Store, etc.)
 function isRestrictedPage(): boolean {
@@ -44,10 +46,10 @@ if (isRestrictedPage()) {
   let applyTimer: ReturnType<typeof setTimeout> | null = null;
   let currentSettings: Settings | null = null;
   let undoSettings: Settings | null = null;
-  // P05: NL plan revert handle
-  let _nlPlanRevert: Revert | null = null;
-  // Used to track whether current applied NL plan is still preview (P08 agent loop uses this)
-  let _nlPlanIsPreview = false; void _nlPlanIsPreview;
+  // AI preview: a temporary overlay on this site's rule, never saved. It goes
+  // through the same resolution + applier as saved settings, so DOM mutations
+  // re-apply it instead of overwriting it.
+  let previewChanges: PlanChanges | null = null;
 
   // Build apply context from current settings
   function makeCtx(applyToWholePage: boolean): ApplyContext {
@@ -69,8 +71,9 @@ if (isRestrictedPage()) {
         observer = null;
         return;
       }
-      const prefs = resolveTypography(settings, hostname);
-      const appearance = resolveAppearance(settings, hostname);
+      const effective = previewChanges ? withSitePatch(settings, hostname, previewChanges) : settings;
+      const prefs = resolveTypography(effective, hostname);
+      const appearance = resolveAppearance(effective, hostname);
       const darkStatus = detectExistingDark();
       // Fast uses inversion, so never invert a page that declares itself dark;
       // that would turn its existing dark palette light. The force override is
@@ -80,7 +83,7 @@ if (isRestrictedPage()) {
       // Apply the root theme as soon as storage resolves, before prose-level rules.
       applyAppearance(ctx, appearance, appearance.theme, shouldSkipTheme);
       applyTypography(ctx, prefs);
-      applyFocus(ctx, resolveFocus(settings, hostname), resolveMotion(settings, hostname));
+      applyFocus(ctx, resolveFocus(effective, hostname), resolveMotion(effective, hostname));
       if (!observer && document.documentElement) {
         observer = new MutationObserver((records) => {
           const hasPageChanges = records.some((record) => record.type === "attributes" || Array.from(record.addedNodes).some((node) =>
@@ -218,39 +221,11 @@ if (isRestrictedPage()) {
       return true; // async
     }
 
-    // ── P05: Apply NL plan ──────────────────────────────────────────────────
-    if (msg.type === "APPLY_NL_PLAN") {
-      void loadSettings().then((settings) => {
-        try {
-          const ctx = makeCtx(settings.global.applyToWholePage);
-          // Revert any existing NL plan before applying new one
-          if (_nlPlanRevert) {
-            _nlPlanRevert();
-            _nlPlanRevert = null;
-          }
-          const result = applyPlan(ctx, msg.operations.map((op) => ({ opId: op.opId, params: op.params })));
-          if (result.errors.length > 0) {
-            console.warn("[AWL content] NL plan had errors:", result.errors);
-          }
-          _nlPlanRevert = result.revert;
-          _nlPlanIsPreview = msg.preview;
-          sendResponse({ type: "ACK", ok: true, error: result.errors.join(" | ") || undefined });
-        } catch (e) {
-          sendResponse({ type: "ACK", ok: false, error: String(e) });
-        }
-      }).catch((e) => sendResponse({ type: "ACK", ok: false, error: String(e) }));
-      return true; // async
-    }
-
-    // ── P05: Revert NL plan ─────────────────────────────────────────────────
-    if (msg.type === "REVERT_NL_PLAN") {
-      if (_nlPlanRevert) {
-        _nlPlanRevert();
-        _nlPlanRevert = null;
-        _nlPlanIsPreview = false;
-      }
-      sendResponse({ type: "ACK", ok: true });
-      return false;
+    // ── P06R: AI preview overlay ────────────────────────────────────────────
+    if (msg.type === "SET_PREVIEW") {
+      previewChanges = msg.changes;
+      void applyFromStorage(currentSettings ?? undefined).then(() => sendResponse({ type: "ACK", ok: true }));
+      return true;
     }
 
     return false;
