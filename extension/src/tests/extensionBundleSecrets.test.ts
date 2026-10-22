@@ -13,6 +13,8 @@ describe("extension bundle secrets", () => {
     const bundle = files(dist).map((file) => readFileSync(file, "utf8")).join("\n");
     expect(bundle).not.toMatch(/GEMINI_API_KEY\s*=/);
     expect(bundle).not.toMatch(/SARVAM_API_KEY\s*=/);
+    expect(bundle).not.toMatch(/ANTHROPIC_API_KEY\s*=/);
     expect(bundle).not.toMatch(/AIza[A-Za-z0-9_-]{20,}/);
+    expect(bundle).not.toMatch(/sk-ant-[A-Za-z0-9_-]{20,}/);
   });
 });

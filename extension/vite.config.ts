@@ -10,7 +10,7 @@ import { resolve } from "path";
 // ES module import syntax. Only the service worker (background.js) supports ESM.
 //
 // HTML entries live at extension/popup/ and extension/options/ so Vite outputs
-// them to dist/popup/ and dist/options/ — matching paths in manifest.json.
+// them to dist/popup/, dist/options/ and dist/sidepanel/ — matching manifest.json.
 
 export default defineConfig({
   plugins: [react()],
@@ -21,6 +21,7 @@ export default defineConfig({
       input: {
         popup: resolve(__dirname, "popup/index.html"),
         options: resolve(__dirname, "options/index.html"),
+        sidepanel: resolve(__dirname, "sidepanel/index.html"),
         background: resolve(__dirname, "src/background/index.ts"),
         // content is NOT here — it is built separately as IIFE
       },

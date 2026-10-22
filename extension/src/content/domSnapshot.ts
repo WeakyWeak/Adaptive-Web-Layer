@@ -99,22 +99,6 @@ export function buildDomSnapshot(applyToWholePage: boolean): DomSnapshot {
   const tableCnt = document.querySelectorAll("table").length;
   const codeBlockCnt = document.querySelectorAll("pre, code").length;
 
-  // ── Current ops ────────────────────────────────────────────────────────────
-  // Read applied ops from style layer (simplified — use style element content)
-  const styleEl = document.querySelector("style[data-awl]");
-  const currentOps: Record<string, string> = {};
-  if (styleEl?.textContent) {
-    // Extract key rules as summary (not the full CSS — just presence)
-    const content = styleEl.textContent;
-    if (content.includes("font-size")) currentOps["fontSize"] = "custom";
-    if (content.includes("line-height")) currentOps["lineHeight"] = "custom";
-    if (content.includes("font-family")) currentOps["fontFamily"] = "custom";
-    if (content.includes("max-width")) currentOps["maxContentWidth"] = "custom";
-    if (content.includes("letter-spacing")) currentOps["letterSpacing"] = "custom";
-    if (content.includes("word-spacing")) currentOps["wordSpacing"] = "custom";
-    if (content.includes("margin-bottom")) currentOps["paragraphSpacing"] = "custom";
-  }
-
   // ── Assemble and truncate ─────────────────────────────────────────────────
   const snap: DomSnapshot = {
     url: window.location.href.slice(0, 200),
@@ -126,7 +110,6 @@ export function buildDomSnapshot(applyToWholePage: boolean): DomSnapshot {
     imageCnt,
     tableCnt,
     codeBlockCnt,
-    currentOps,
     tokenEstimate: 0,
   };
 

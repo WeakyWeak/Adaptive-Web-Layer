@@ -1,54 +1,15 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { pathToFileURL } from "node:url";
+import { loadConfig, type Config } from "./config.ts";
+import { analyzeWithAnthropic } from "./providers/anthropic.ts";
+import { analyzeWithGemini } from "./providers/gemini.ts";
+import { UpstreamError, MAX_OUTPUT_TOKENS, type AnalyzeRequest, type AnalyzeResult } from "./providers/types.ts";
 
 const MAX_BODY_BYTES = 1_000_000;
 const MAX_REQUESTS_PER_MINUTE = 30;
-const CLOUD_MAX_OUTPUT_TOKENS = 4096;
-const GEMINI_TIMEOUT_MS = 120_000;
-const GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models";
-// Resolve from this file so workspace scripts and direct Node starts load the
-// same server/.env, independent of the caller's working directory.
-const ENV_FILE = resolve(dirname(fileURLToPath(import.meta.url)), "../.env");
-
-interface Config {
-  geminiApiKey: string;
-  proxyToken: string;
-  port: number;
-  allowedOrigin: string;
-}
-
-interface ImageInput { mimeType: string; data: string }
-interface AnalyzeRequest {
-  model: string;
-  systemPrompt: string;
-  userPrompt: string;
-  responseSchema?: Record<string, unknown>;
-  images?: ImageInput[];
-  maxTokens?: number;
-}
-
-function loadEnv(): Record<string, string> {
-  const values: Record<string, string> = {};
-  try {
-    for (const line of readFileSync(ENV_FILE, "utf8").split(/\r?\n/)) {
-      const match = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/);
-      if (match && !match[1].startsWith("#")) values[match[1]] = match[2].replace(/^['"]|['"]$/g, "");
-    }
-  } catch { /* A missing .env is reported safely by /health and requests. */ }
-  return values;
-}
-
-function config(): Config {
-  const env = { ...loadEnv(), ...process.env };
-  return {
-    geminiApiKey: env.GEMINI_API_KEY ?? "",
-    proxyToken: env.PROXY_TOKEN ?? "",
-    port: Number(env.PORT ?? 8787),
-    allowedOrigin: env.ALLOWED_ORIGIN ?? "",
-  };
-}
+// The extension's service worker must receive bytes regularly while a model
+// thinks; a ping line every few seconds keeps its fetch and lifetime alive.
+const PING_MS = 5_000;
 
 function sendJson(res: ServerResponse, status: number, payload: unknown): void {
   res.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
@@ -64,15 +25,22 @@ function authorized(req: IncomingMessage, cfg: Config): boolean {
   return Boolean(cfg.proxyToken) && token === cfg.proxyToken;
 }
 
-function corsAllowed(req: IncomingMessage, cfg: Config): boolean {
-  const origin = req.headers.origin;
-  return !origin || Boolean(cfg.allowedOrigin) && origin === cfg.allowedOrigin;
+/**
+ * Web pages can never send a chrome-extension:// Origin, so allowing extension
+ * origins blocks every website; ALLOWED_ORIGIN can pin one extension id.
+ * Requests without an Origin (curl, the smoke test) rely on the bearer token.
+ */
+export function originAllowed(origin: string | undefined, allowedOrigins: string[]): boolean {
+  if (!origin) return true;
+  if (allowedOrigins.length > 0) return allowedOrigins.includes(origin);
+  return origin.startsWith("chrome-extension://");
 }
 
 function applyCors(req: IncomingMessage, res: ServerResponse, cfg: Config): boolean {
-  if (!corsAllowed(req, cfg)) { error(res, 403, "origin_forbidden", "This origin is not allowed to use the local proxy."); return false; }
-  if (req.headers.origin && cfg.allowedOrigin) {
-    res.setHeader("Access-Control-Allow-Origin", cfg.allowedOrigin);
+  const origin = req.headers.origin;
+  if (!originAllowed(origin, cfg.allowedOrigins)) { error(res, 403, "origin_forbidden", "This origin is not allowed to use the local proxy."); return false; }
+  if (origin) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
     res.setHeader("Vary", "Origin");
     res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type");
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
@@ -92,14 +60,29 @@ async function readJson(req: IncomingMessage): Promise<unknown> {
   try { return JSON.parse(Buffer.concat(chunks).toString("utf8")); } catch { throw new Error("malformed_json"); }
 }
 
-function parseAnalyzeRequest(value: unknown): AnalyzeRequest | null {
-  if (!value || typeof value !== "object") return null;
-  const request = value as Partial<AnalyzeRequest>;
-  if (typeof request.model !== "string" || !/^[A-Za-z0-9._-]{1,128}$/.test(request.model)) return null;
-  if (typeof request.systemPrompt !== "string" || request.systemPrompt.length > 100_000) return null;
-  if (typeof request.userPrompt !== "string" || request.userPrompt.length > 100_000) return null;
-  if (request.images && (!Array.isArray(request.images) || request.images.length > 4 || request.images.some((image) => !image || typeof image.mimeType !== "string" || typeof image.data !== "string" || image.data.length > 750_000))) return null;
-  return request as AnalyzeRequest;
+const isObject = (value: unknown): value is Record<string, unknown> => Boolean(value) && typeof value === "object" && !Array.isArray(value);
+
+export function parseAnalyzeRequest(value: unknown): AnalyzeRequest | null {
+  if (!isObject(value)) return null;
+  const backend = value.backend ?? "gemini";
+  if (backend !== "gemini" && backend !== "anthropic") return null;
+  if (typeof value.model !== "string" || !/^[A-Za-z0-9._-]{1,128}$/.test(value.model)) return null;
+  if (typeof value.systemPrompt !== "string" || value.systemPrompt.length > 100_000) return null;
+  if (typeof value.userPrompt !== "string" || value.userPrompt.length > 100_000) return null;
+  if (value.schema !== undefined && !isObject(value.schema)) return null;
+  if (value.schemaFallback !== undefined && !isObject(value.schemaFallback)) return null;
+  const images = value.images;
+  if (images !== undefined && (!Array.isArray(images) || images.length > 4 || images.some((image) => !isObject(image) || !/^image\/(png|jpeg|webp)$/.test(String(image.mimeType)) || typeof image.data !== "string" || image.data.length > 750_000))) return null;
+  return {
+    backend,
+    model: value.model,
+    systemPrompt: value.systemPrompt,
+    userPrompt: value.userPrompt,
+    schema: value.schema as Record<string, unknown> | undefined,
+    schemaFallback: value.schemaFallback as Record<string, unknown> | undefined,
+    images: images as AnalyzeRequest["images"],
+    maxTokens: typeof value.maxTokens === "number" ? value.maxTokens : MAX_OUTPUT_TOKENS,
+  };
 }
 
 const requestTimes = new Map<string, number[]>();
@@ -111,84 +94,67 @@ function rateLimited(req: IncomingMessage): boolean {
   kept.push(now); requestTimes.set(key, kept); return false;
 }
 
-function geminiBody(input: AnalyzeRequest): Record<string, unknown> {
-  const parts: Array<Record<string, unknown>> = [{ text: input.userPrompt }];
-  for (const image of input.images ?? []) parts.push({ inlineData: { mimeType: image.mimeType, data: image.data } });
-  const generationConfig: Record<string, unknown> = {
-    temperature: 0,
-    maxOutputTokens: Math.min(Math.max(input.maxTokens ?? CLOUD_MAX_OUTPUT_TOKENS, 1), CLOUD_MAX_OUTPUT_TOKENS),
-  };
-  // Gemini 3.8 structured output uses responseFormat.text, not the earlier
-  // responseMimeType/responseSchema fields. This makes the JSON constraint
-  // effective at the Gemini API boundary.
-  if (input.responseSchema) {
-    generationConfig.responseFormat = {
-      text: {
-        mimeType: "APPLICATION_JSON",
-        schema: input.responseSchema,
-      },
-    };
-  }
-  return {
-    systemInstruction: { parts: [{ text: input.systemPrompt }] },
-    contents: [{ role: "user", parts }],
-    generationConfig,
-  };
+export function analyze(input: AnalyzeRequest, cfg: Config): Promise<AnalyzeResult> {
+  return input.backend === "anthropic"
+    ? analyzeWithAnthropic(input, cfg.anthropicApiKey, cfg.anthropicEffort)
+    : analyzeWithGemini(input, cfg.geminiApiKey);
 }
 
-async function callGemini(input: AnalyzeRequest, cfg: Config): Promise<{ status: number; payload: unknown }> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
+/** Streams NDJSON: ping lines while waiting, then exactly one result or error line. */
+async function streamAnalysis(res: ServerResponse, input: AnalyzeRequest, cfg: Config): Promise<void> {
+  res.writeHead(200, { "Content-Type": "application/x-ndjson; charset=utf-8", "Cache-Control": "no-store" });
+  const write = (line: unknown) => { if (!res.writableEnded) res.write(`${JSON.stringify(line)}\n`); };
+  write({ type: "ping" });
+  const ping = setInterval(() => write({ type: "ping" }), PING_MS);
   try {
-    const response = await fetch(`${GEMINI_ENDPOINT}/${encodeURIComponent(input.model)}:generateContent`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-goog-api-key": cfg.geminiApiKey },
-      body: JSON.stringify(geminiBody(input)),
-      signal: controller.signal,
-    });
-    const payload = await response.json().catch(() => null);
-    return { status: response.status, payload };
+    const result = await analyze(input, cfg);
+    write({ type: "result", ...result });
   } catch (caught) {
-    return { status: controller.signal.aborted ? 504 : 503, payload: { error: { message: "Cloud provider unavailable" } } };
-  } finally { clearTimeout(timeout); }
-}
-
-function responseText(payload: unknown): string | null {
-  const data = payload as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
-  const text = data.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join("");
-  return text || null;
+    const failure = caught instanceof UpstreamError ? caught : new UpstreamError(500, "upstream_error", "Cloud provider request failed.");
+    write({ type: "error", status: failure.status, code: failure.code, message: failure.message });
+  } finally {
+    clearInterval(ping);
+    res.end();
+  }
 }
 
 const server = createServer(async (req, res) => {
-  const cfg = config();
+  const cfg = loadConfig();
   if (!applyCors(req, res, cfg)) return;
   if (req.method === "OPTIONS") { res.writeHead(204); res.end(); return; }
-  if (!authorized(req, cfg)) { error(res, 401, "unauthorized", "A valid local proxy token is required."); return; }
+  if (!authorized(req, cfg)) {
+    error(res, 401, "unauthorized", cfg.proxyToken ? "A valid local proxy token is required." : "Set PROXY_TOKEN in server/.env first.");
+    return;
+  }
   if (req.method === "GET" && req.url === "/health") {
-    sendJson(res, 200, { ok: true, geminiConfigured: Boolean(cfg.geminiApiKey) }); return;
+    sendJson(res, 200, { ok: true, backends: { gemini: Boolean(cfg.geminiApiKey), anthropic: Boolean(cfg.anthropicApiKey) } });
+    return;
   }
   if (req.method !== "POST" || req.url !== "/v1/analyze") { error(res, 404, "not_found", "Endpoint not found."); return; }
   if (rateLimited(req)) { error(res, 429, "rate_limited", "Too many requests; try again in a minute."); return; }
   let body: unknown;
   try { body = await readJson(req); } catch (caught) {
-    error(res, (caught as Error).message === "body_too_large" ? 413 : 400, (caught as Error).message, "Request body must be valid JSON within the size limit."); return;
+    const code = (caught as Error).message;
+    error(res, code === "body_too_large" ? 413 : 400, code, "Request body must be valid JSON within the size limit.");
+    return;
   }
   const input = parseAnalyzeRequest(body);
   if (!input) { error(res, 400, "invalid_request", "Request fields are invalid or exceed limits."); return; }
-  if (!cfg.geminiApiKey) { error(res, 503, "not_configured", "Gemini is not configured on the local proxy."); return; }
-  const upstream = await callGemini(input, cfg);
-  if (upstream.status !== 200) {
-    const upstreamError = upstream.payload as { error?: { message?: string } };
-    error(res, upstream.status === 429 ? 429 : upstream.status >= 500 ? 503 : upstream.status, "upstream_error", upstreamError.error?.message ?? "Cloud provider request failed."); return;
+  const configured = input.backend === "anthropic" ? cfg.anthropicApiKey : cfg.geminiApiKey;
+  if (!configured) {
+    error(res, 503, "not_configured", `${input.backend === "anthropic" ? "ANTHROPIC_API_KEY" : "GEMINI_API_KEY"} is not set in server/.env.`);
+    return;
   }
-  const text = responseText(upstream.payload);
-  if (!text) { error(res, 422, "safety_block", "The cloud provider returned no usable content."); return; }
-  if (!input.responseSchema) { sendJson(res, 200, { text, modelId: input.model }); return; }
-  try { sendJson(res, 200, { data: JSON.parse(text), modelId: input.model }); } catch { error(res, 502, "malformed_upstream_json", "The cloud provider did not return valid structured JSON."); }
+  await streamAnalysis(res, input, cfg);
 });
 
-const cfg = config();
-server.listen(cfg.port, "127.0.0.1", () => {
-  // Safe operational event only: never include keys, tokens, or request bodies.
-  console.log(`Adaptive Web Layer proxy listening on http://127.0.0.1:${cfg.port}`);
-});
+// Only listen when run directly (tests import the helpers above).
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const cfg = loadConfig();
+  server.listen(cfg.port, "127.0.0.1", () => {
+    // Safe operational event only: never include keys, tokens, or request bodies.
+    const backends = [cfg.geminiApiKey && "gemini", cfg.anthropicApiKey && "anthropic"].filter(Boolean).join(", ") || "none";
+    console.log(`Adaptive Web Layer proxy listening on http://127.0.0.1:${cfg.port} (backends: ${backends})`);
+    if (!cfg.proxyToken) console.warn("PROXY_TOKEN is not set in server/.env; every request will be rejected.");
+  });
+}

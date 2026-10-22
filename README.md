@@ -43,6 +43,35 @@ Pages:
 - http://localhost:4173/responsive-dynamic.html — responsive + dynamic JS content
 - http://localhost:4173/native-dark.html — native dark theme and fixed/sticky controls
 
+## AI setup (local, cloud, hybrid)
+
+The AI assistant lives in Chrome's **side panel**: click the toolbar icon → **Open AI assistant**. Type a request ("make the text larger, keep code colours"). It previews on the page; then you choose **Apply**, **Discard**, **Undo** or **Save as profile**. Saved settings always apply with zero AI calls.
+
+### What to run (one terminal each)
+
+| Terminal | Command | Port | Needed for |
+|---|---|---|---|
+| 1 | `npm run fixtures` | 4173 | the test pages only |
+| 2 | `npm run llm` | 8080 | **Local** and **Hybrid** modes (starts llama-server on your GPU) |
+| 3 | `npm run proxy` | 8787 | **Cloud** and **Hybrid** modes (Gemini / Claude) |
+
+`npm run llm` finds `llama-server` on your PATH or at `~/llama.cpp/build/bin/llama-server` and loads `qwen/qwen2.5-coder-7b-instruct-q4_k_m.gguf` with every layer on the GPU. Override with `MODEL=… CTX=… npm run llm`.
+
+The proxy reads `server/.env` (copy `server/.env.example`). It needs `PROXY_TOKEN` (any long random string you choose) and at least one of `GEMINI_API_KEY` / `ANTHROPIC_API_KEY`. `npm run smoke` checks the keys without the extension.
+
+Then in **Settings → AI**:
+- **Local only**: click **Test local connection**.
+- **Cloud / Hybrid**: pick Gemini or Claude, paste the same `PROXY_TOKEN` into **Proxy token**, and click **Test cloud proxy**.
+- **Demo mode** uses built-in rules and no model at all.
+
+### Measure a model before the demo
+
+```bash
+npm run eval:planner -- --target local                     # llama-server on :8080
+npm run eval:planner -- --target cloud --backend gemini --model gemini-3.5-flash-lite --token <PROXY_TOKEN>
+```
+It prints the valid-plan rate, accuracy on 25 cases (including prompt-injection pages) and p50/p95 latency, and writes a report to `extension/eval/results/`.
+
 ## Run Tests
 
 ```bash
@@ -72,13 +101,16 @@ adaptive-web-layer/
 │   ├── src/
 │   │   ├── background/ # MV3 service worker
 │   │   ├── content/    # Content script (document_start)
-│   │   ├── popup/      # React popup UI
+│   │   ├── popup/      # React popup UI (quick settings)
+│   │   ├── sidepanel/  # React side panel (AI assistant)
 │   │   ├── options/    # React options page
 │   │   ├── shared/     # Shared types, schemas, utils
 │   │   └── tests/      # Unit tests
 │   ├── e2e/            # Playwright e2e tests
+│   ├── eval/           # Planner eval cases (results git-ignored)
+│   ├── scripts/        # evalPlanner.ts
 │   └── dist/           # Build output (git-ignored)
-├── server/             # Local proxy (added in P06)
+├── server/             # Local proxy for Gemini / Claude (keys live in server/.env)
 ├── fixtures/           # Static test pages
 ├── docs/               # Architecture, decisions, permissions
 └── phases/             # Phase instructions (git-ignored)

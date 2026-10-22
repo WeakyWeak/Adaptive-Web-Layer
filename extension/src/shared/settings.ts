@@ -2,7 +2,7 @@ import { z } from "zod";
 
 // ─── Schema version ──────────────────────────────────────────────────────────
 // Bump this when you add a migration below.
-export const SETTINGS_VERSION = 8;
+export const SETTINGS_VERSION = 9;
 
 // ─── Typography preferences ──────────────────────────────────────────────────
 export const FONT_FAMILY_OPTIONS = [
@@ -92,16 +92,21 @@ export const AiSettingsSchema = z.object({
   mode: z.enum(["local", "cloud", "hybrid"]).default("local"),
   // llama-server default port is 8080; Ollama uses 11434 with /v1 endpoint
   localEndpoint: z.string().default("http://127.0.0.1:8080"),
-  localModel: z.string().default("qwen2.5-coder:7b"),
+  // llama-server serves whichever GGUF it was started with; the id is informational.
+  localModel: z.string().default("local"),
   localContextSize: z.number().min(512).max(131072).default(8192),
   localApiKey: z.string().default(""),
-  localTimeoutMs: z.number().min(1000).max(120000).default(30000),
-  // The proxy is local; this token authorizes only that proxy, never Gemini.
-  cloudModel: z.string().min(1).max(128).default("gemini-3.8-flash"),
+  // Replies stream, so long generations no longer trip MV3's 30 s fetch limit.
+  localTimeoutMs: z.number().min(1000).max(300000).default(120000),
+  /** Set only when the local model accepts images (e.g. a model loaded with --mmproj). */
+  localVision: z.boolean().default(false),
+  // The proxy is local; this token authorizes only that proxy, never a provider.
+  cloudBackend: z.enum(["gemini", "anthropic"]).default("gemini"),
+  cloudModel: z.string().min(1).max(128).default("gemini-3.5-flash-lite"),
+  anthropicModel: z.string().min(1).max(128).default("claude-opus-5-5"),
   cloudProxyUrl: z.string().url().default("http://127.0.0.1:8787"),
   cloudProxyToken: z.string().max(512).default(""),
-  cloudTimeoutMs: z.number().min(1000).max(120000).default(120000),
-  cloudEnabled: z.boolean().default(false),
+  cloudTimeoutMs: z.number().min(1000).max(300000).default(120000),
   demoMode: z.boolean().default(false),
 });
 export type AiSettings = z.infer<typeof AiSettingsSchema>;
@@ -235,6 +240,11 @@ export function matchingSiteRule(settings: Settings, hostname: string): SiteRule
 // Each fn takes the raw object from storage and returns the migrated object.
 type MigrationFn = (raw: Record<string, unknown>) => Record<string, unknown>;
 const migrations: Record<number, MigrationFn> = {
+  9: (raw) => {
+    const ai = typeof raw.ai === "object" && raw.ai !== null ? raw.ai as Record<string, unknown> : {};
+    // Streaming replies make the old 30 s local limit unnecessary; it cut off 7B models.
+    return { ...raw, ai: { ...ai, localTimeoutMs: ai.localTimeoutMs === 30000 || ai.localTimeoutMs === undefined ? 120000 : ai.localTimeoutMs } };
+  },
   8: (raw) => ({
     ...raw,
     ai: {
