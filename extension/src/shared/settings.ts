@@ -102,7 +102,7 @@ export const AiSettingsSchema = z.object({
   localVision: z.boolean().default(false),
   // The proxy is local; this token authorizes only that proxy, never a provider.
   cloudBackend: z.enum(["gemini", "anthropic"]).default("gemini"),
-  cloudModel: z.string().min(1).max(128).default("gemini-3.8-flash"),
+  cloudModel: z.string().min(1).max(128).default("gemini-3.5-flash-lite"),
   anthropicModel: z.string().min(1).max(128).default("claude-opus-5-5"),
   cloudProxyUrl: z.string().url().default("http://127.0.0.1:8787"),
   cloudProxyToken: z.string().max(512).default(""),

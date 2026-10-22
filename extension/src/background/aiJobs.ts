@@ -126,6 +126,7 @@ export async function runAiJob(tabId: number, request: string): Promise<void> {
       changes = result.changes;
       source = router.usedProvider ?? undefined;
       if (result.retried) warnings.push("The first reply was invalid; this is the model's corrected plan.");
+      warnings.push(...result.notes);
       if (router.usedProvider === "cloud" && settings.privacy.cloudAllowOnceFor === hostname) {
         const latest = await loadSettings();
         await saveSettings({ ...latest, privacy: { ...latest.privacy, cloudAllowOnceFor: undefined } });

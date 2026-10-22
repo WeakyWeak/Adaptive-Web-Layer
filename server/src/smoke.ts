@@ -8,7 +8,7 @@ import { geminiSchemaField } from "./providers/gemini.ts";
 import type { AnalyzeRequest, Backend } from "./providers/types.ts";
 
 const MODELS: Record<Backend, string> = {
-  gemini: process.env.SMOKE_GEMINI_MODEL ?? "gemini-3.8-flash",
+  gemini: process.env.SMOKE_GEMINI_MODEL ?? "gemini-3.5-flash-lite",
   anthropic: process.env.SMOKE_ANTHROPIC_MODEL ?? "claude-opus-5-5",
 };
 

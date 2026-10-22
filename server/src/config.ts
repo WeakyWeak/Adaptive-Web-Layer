@@ -37,7 +37,8 @@ export function loadConfig(): Config {
   const effort = env.ANTHROPIC_EFFORT as Effort | undefined;
   return {
     geminiApiKey: placeholder(env.GEMINI_API_KEY) ? "" : env.GEMINI_API_KEY ?? "",
-    anthropicApiKey: placeholder(env.ANTHROPIC_API_KEY) ? "" : env.ANTHROPIC_API_KEY ?? "",
+    // Real Anthropic keys start with "sk-ant-"; anything else is a leftover placeholder.
+    anthropicApiKey: !placeholder(env.ANTHROPIC_API_KEY) && env.ANTHROPIC_API_KEY?.startsWith("sk-ant-") ? env.ANTHROPIC_API_KEY : "",
     anthropicEffort: effort && EFFORTS.includes(effort) ? effort : "low",
     proxyToken: placeholder(env.PROXY_TOKEN) ? "" : env.PROXY_TOKEN ?? "",
     port: Number(env.PORT ?? 8787),

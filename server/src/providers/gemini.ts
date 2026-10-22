@@ -3,9 +3,12 @@
 // that field, retries once with the OpenAPI-style `responseSchema`.
 // `npm run smoke --workspace=server` shows which one the live API accepted.
 
-import { MAX_OUTPUT_TOKENS, parseJsonReply, UpstreamError, UPSTREAM_TIMEOUT_MS, type AnalyzeRequest, type AnalyzeResult } from "./types.ts";
+import { MAX_OUTPUT_TOKENS, parseJsonReply, UpstreamError, type AnalyzeRequest, type AnalyzeResult } from "./types.ts";
 
 const ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models";
+// Three attempts (+ backoff) must finish before the extension's 120 s limit,
+// so the user gets "Gemini is busy" rather than a bare timeout.
+const ATTEMPT_TIMEOUT_MS = 35_000;
 
 type SchemaField = "responseJsonSchema" | "responseSchema";
 
@@ -40,7 +43,7 @@ async function call(input: AnalyzeRequest, apiKey: string, field: SchemaField): 
       method: "POST",
       headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
       body: JSON.stringify(body(input, field)),
-      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+      signal: AbortSignal.timeout(ATTEMPT_TIMEOUT_MS),
     });
     return { status: response.status, payload: await response.json().catch(() => null) as GeminiReply | null };
   } catch (caught) {
@@ -56,15 +59,37 @@ export function geminiSchemaField(): SchemaField {
   return acceptedField;
 }
 
+const RETRY_DELAYS_MS = [1500, 4000];
+
+/** Gemini answers 503 "high demand" during load spikes; those usually clear within seconds. */
+async function callWithRetry(input: AnalyzeRequest, apiKey: string, field: SchemaField): Promise<{ status: number; payload: GeminiReply | null }> {
+  let result = await call(input, apiKey, field).catch((error: unknown) => {
+    if (error instanceof UpstreamError && error.status === 504) return { status: 504, payload: null };
+    throw error;
+  });
+  for (const delay of RETRY_DELAYS_MS) {
+    if (result.status !== 503 && result.status !== 504) break;
+    await new Promise((resolve) => setTimeout(resolve, delay));
+    result = await call(input, apiKey, field).catch((error: unknown) => {
+      if (error instanceof UpstreamError && error.status === 504) return { status: 504, payload: null };
+      throw error;
+    });
+  }
+  if (result.status === 504) throw new UpstreamError(504, "timeout", "Gemini did not answer in time (it may be overloaded). Try again or pick a lighter model.");
+  return result;
+}
+
 export async function analyzeWithGemini(input: AnalyzeRequest, apiKey: string): Promise<AnalyzeResult> {
   if (!apiKey) throw new UpstreamError(503, "not_configured", "GEMINI_API_KEY is not set in server/.env.");
-  let { status, payload } = await call(input, apiKey, acceptedField);
+  let { status, payload } = await callWithRetry(input, apiKey, acceptedField);
   if (status === 400 && input.schema && acceptedField === "responseJsonSchema" && /responseJsonSchema|response_json_schema|Unknown name/i.test(payload?.error?.message ?? "")) {
     acceptedField = "responseSchema";
-    ({ status, payload } = await call(input, apiKey, acceptedField));
+    ({ status, payload } = await callWithRetry(input, apiKey, acceptedField));
   }
   if (status !== 200) {
-    const message = payload?.error?.message ?? `Gemini returned HTTP ${status}.`;
+    const message = status === 503
+      ? `Gemini (${input.model}) is overloaded right now. Try again shortly, or pick a lighter model such as gemini-3.5-flash-lite.`
+      : payload?.error?.message ?? `Gemini returned HTTP ${status}.`;
     throw new UpstreamError(status === 429 ? 429 : status >= 500 ? 503 : status, status === 429 ? "rate_limited" : "upstream_error", message);
   }
   if (payload?.promptFeedback?.blockReason) throw new UpstreamError(422, "safety_block", `Gemini blocked the request (${payload.promptFeedback.blockReason}).`);

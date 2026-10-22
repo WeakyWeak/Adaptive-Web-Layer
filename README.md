@@ -47,30 +47,28 @@ Pages:
 
 The AI assistant lives in Chrome's **side panel**: click the toolbar icon → **Open AI assistant**. Type a request ("make the text larger, keep code colours"). It previews on the page; then you choose **Apply**, **Discard**, **Undo** or **Save as profile**. Saved settings always apply with zero AI calls.
 
-### Local model (llama.cpp, default)
+### What to run (one terminal each)
 
-1. Build or install llama.cpp with CUDA (for an NVIDIA GPU such as an RTX 4050), so `llama-server` is on your PATH.
-2. Start a model with every layer on the GPU:
-   ```bash
-   llama-server -m qwen/qwen2.5-coder-7b-instruct-q4_k_m.gguf -ngl 99 -c 8192 --jinja --port 8080
-   ```
-   On a 6 GB GPU, a ~4B instruct model at Q4_K_M (e.g. Qwen3.5-4B or Gemma 4 E4B) is faster and leaves room for context. Compare candidates with the eval below.
-3. In **Settings → AI**, keep mode **Local only** and click **Test local connection**.
+| Terminal | Command | Port | Needed for |
+|---|---|---|---|
+| 1 | `npm run fixtures` | 4173 | the test pages only |
+| 2 | `npm run llm` | 8080 | **Local** and **Hybrid** modes (starts llama-server on your GPU) |
+| 3 | `npm run proxy` | 8787 | **Cloud** and **Hybrid** modes (Gemini / Claude) |
 
-### Cloud (Gemini or Claude, through the local proxy)
+`npm run llm` finds `llama-server` on your PATH or at `~/llama.cpp/build/bin/llama-server` and loads `qwen/qwen2.5-coder-7b-instruct-q4_k_m.gguf` with every layer on the GPU. Override with `MODEL=… CTX=… npm run llm`.
 
-```bash
-cp server/.env.example server/.env   # PROXY_TOKEN + GEMINI_API_KEY and/or ANTHROPIC_API_KEY
-npm run proxy
-npm run smoke                        # proves each backend returns valid structured JSON
-```
-In **Settings → AI**, pick **Hybrid** (local first, cloud only after asking you) or **Cloud**. Choose Gemini or Claude, paste the proxy token, and click **Test cloud proxy**. **Demo mode** uses built-in rules and no model at all.
+The proxy reads `server/.env` (copy `server/.env.example`). It needs `PROXY_TOKEN` (any long random string you choose) and at least one of `GEMINI_API_KEY` / `ANTHROPIC_API_KEY`. `npm run smoke` checks the keys without the extension.
+
+Then in **Settings → AI**:
+- **Local only**: click **Test local connection**.
+- **Cloud / Hybrid**: pick Gemini or Claude, paste the same `PROXY_TOKEN` into **Proxy token**, and click **Test cloud proxy**.
+- **Demo mode** uses built-in rules and no model at all.
 
 ### Measure a model before the demo
 
 ```bash
 npm run eval:planner -- --target local                     # llama-server on :8080
-npm run eval:planner -- --target cloud --backend anthropic --token <PROXY_TOKEN>
+npm run eval:planner -- --target cloud --backend gemini --model gemini-3.5-flash-lite --token <PROXY_TOKEN>
 ```
 It prints the valid-plan rate, accuracy on 25 cases (including prompt-injection pages) and p50/p95 latency, and writes a report to `extension/eval/results/`.
 
