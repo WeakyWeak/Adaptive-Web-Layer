@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback, useRef } from "react";
 import type { Settings, TypographyPrefs } from "../../shared/settings";
 import { resolveTypography, TypographyPrefsSchema } from "../../shared/settings";
 import { withSiteTypography } from "../../shared/sitePatch";
-import { loadSettings, saveSettings } from "../../shared/storage";
+import { loadSettings, patchSettings } from "../../shared/storage";
 import { FONT_OPTIONS } from "../../content/typographyOps";
 
 const DEFAULT_PREFS: TypographyPrefs = TypographyPrefsSchema.parse({});
@@ -65,7 +65,7 @@ export default function ReadingPanel(): React.ReactElement {
       // Debounced save to storage
       if (debounceRef.current) clearTimeout(debounceRef.current);
       debounceRef.current = setTimeout(() => {
-        loadSettings().then((settings) => saveSettings(saveTypography(settings, hostname, next))).then(setSaved).catch(console.warn);
+        patchSettings((settings) => saveTypography(settings, hostname, next)).then((saved) => setSaved(saved !== null)).catch(console.warn);
       }, 600);
     },
     [prefs, sendPreview, hostname]
@@ -78,7 +78,7 @@ export default function ReadingPanel(): React.ReactElement {
     const defaults = TypographyPrefsSchema.parse({});
     setPrefs(defaults);
     sendPreview(defaults);
-    loadSettings().then((settings) => saveSettings(saveTypography(settings, hostname, defaults))).then(setSaved).catch(console.warn);
+    patchSettings((settings) => saveTypography(settings, hostname, defaults)).then((saved) => setSaved(saved !== null)).catch(console.warn);
   }, [sendPreview, hostname]);
 
   if (loading) return <div className="panel-loading">Loading…</div>;

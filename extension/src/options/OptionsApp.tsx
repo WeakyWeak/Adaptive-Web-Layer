@@ -4,7 +4,7 @@ import AppearanceTab from "./AppearanceTab";
 import AiTab from "./AiTab";
 import PrivacyTab from "./PrivacyTab";
 import { defaultSettings, SettingsSchema, BUILT_IN_PROFILES, resolveAppearance, resolveFocus, resolveMotion, resolveTypography, type Settings } from "../shared/settings";
-import { loadSettings, saveSettings } from "../shared/storage";
+import { loadSettings, onSettingsChange, saveSettings } from "../shared/storage";
 
 const TABS = [
   { id: "appearance", label: "Appearance & Reading" },
@@ -24,7 +24,7 @@ export default function OptionsApp(): React.ReactElement {
   const [message, setMessage] = useState("");
   const [siteHost, setSiteHost] = useState("");
   const [importMode, setImportMode] = useState<"merge" | "replace">("replace");
-  useEffect(() => { void loadSettings().then(setSettings); }, []);
+  useEffect(() => { void loadSettings().then(setSettings); const unsubscribe = onSettingsChange(setSettings); return () => { unsubscribe(); }; }, []);
   const update = async (next: Settings) => {
     if (await saveSettings(next)) { setSettings(next); setMessage("Saved"); }
     else setMessage("Could not save settings");

@@ -46,6 +46,13 @@ export function withSitePatch(settings: Settings, hostname: string, changes: Pla
   return { ...settings, siteRules: [...settings.siteRules.filter((item) => normalizeHostname(item.hostname) !== host), rule] };
 }
 
+/** Returns settings whose exact-host rule for `hostname` is `update(rule)`; a subdomain-wide rule stays untouched. */
+export function withSiteRule(settings: Settings, hostname: string, update: (rule: SiteRule) => SiteRule): Settings {
+  const host = normalizeHostname(hostname);
+  const patched = withSitePatch(settings, host, {});
+  return restoreSiteRule(patched, host, update(exactSiteRule(patched, host)!));
+}
+
 /** Selector lists for the three element operations. */
 export interface SiteElements {
   hide: string[];
@@ -127,10 +134,7 @@ export function resetSiteRule(settings: Settings, hostname: string): Settings {
 
 /** Returns settings whose exact-host rule has `typography` merged in (the popup's Reading panel). */
 export function withSiteTypography(settings: Settings, hostname: string, typography: Partial<TypographyPrefs>): Settings {
-  const host = normalizeHostname(hostname);
-  const patched = withSitePatch(settings, host, {});
-  const rule = exactSiteRule(patched, host)!;
-  return restoreSiteRule(patched, host, { ...rule, typography: { ...rule.typography, ...typography } });
+  return withSiteRule(settings, hostname, (rule) => ({ ...rule, typography: { ...rule.typography, ...typography } }));
 }
 
 export function exactSiteRule(settings: Settings, hostname: string): SiteRule | undefined {

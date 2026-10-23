@@ -1,17 +1,17 @@
 import React, { useEffect, useState } from "react";
 import type { PageInfo } from "../shared/messages";
 import { panels } from "./panels/index";
-import { defaultSettings, isSiteEnabled, matchingSiteRule, type Settings } from "../shared/settings";
-import { loadSettings, saveSettings } from "../shared/storage";
+import { isSiteEnabled, matchingSiteRule, normalizeHostname } from "../shared/settings";
+import { withSiteRule } from "../shared/sitePatch";
+import { useSettings } from "./useSettings";
 import "./popup.css";
 
 export default function App(): React.ReactElement {
   const [pageInfo, setPageInfo] = useState<PageInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [settings, setSettings] = useState<Settings>(defaultSettings());
+  const [settings, updateSettings] = useSettings();
 
   useEffect(() => {
-    void loadSettings().then(setSettings);
     // Ask the active tab's content script for page info
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       const tab = tabs[0];
@@ -39,15 +39,13 @@ export default function App(): React.ReactElement {
 
   const updateRule = async (enabled: boolean) => {
     if (!pageInfo) return;
-    const current = matchingSiteRule(settings, pageInfo.hostname);
-    const next = { ...settings, siteRules: [...settings.siteRules.filter((r) => r.hostname !== pageInfo.hostname), { hostname: pageInfo.hostname.toLowerCase(), enabled, includeSubdomains: false, profileId: current?.profileId ?? null, disabledOperations: current?.disabledOperations ?? [], typography: current?.typography ?? {}, appearance: current?.appearance ?? {}, focus: current?.focus ?? {}, motion: current?.motion ?? {} }] };
-    if (await saveSettings(next)) setSettings(next);
+    await updateSettings((current) => withSiteRule(current, pageInfo.hostname, (rule) => ({ ...rule, enabled })));
   };
 
   const resetSiteRule = async () => {
     if (!pageInfo) return;
-    const next = { ...settings, siteRules: settings.siteRules.filter((rule) => rule.hostname !== pageInfo.hostname.toLowerCase()) };
-    if (await saveSettings(next)) setSettings(next);
+    const host = normalizeHostname(pageInfo.hostname);
+    await updateSettings((current) => ({ ...current, siteRules: current.siteRules.filter((rule) => normalizeHostname(rule.hostname) !== host) }));
   };
 
   const sendPageAction = (type: "UNDO_PAGE" | "RESET_PAGE") => {
@@ -74,8 +72,8 @@ export default function App(): React.ReactElement {
             </div>
             <button className="site-toggle" onClick={() => void updateRule(!isSiteEnabled(settings, pageInfo.hostname))}>{isSiteEnabled(settings, pageInfo.hostname) ? "Turn off on this site" : "Turn on for this site"}</button>
             {matchingSiteRule(settings, pageInfo.hostname) && <button className="site-reset" onClick={() => void resetSiteRule()}>Reset this site’s rule</button>}
-            <label className="global-toggle"><input type="checkbox" checked={settings.enabled} onChange={(e) => { const next = { ...settings, enabled: e.target.checked }; void saveSettings(next).then((ok) => { if (ok) setSettings(next); }); }} /> Enable Adaptive Web Layer globally</label>
-            <label className="profile-select">Profile <select value={settings.activeProfileId ?? ""} onChange={(e) => { const next = { ...settings, activeProfileId: e.target.value || null }; void saveSettings(next).then((ok) => { if (ok) setSettings(next); }); }}><option value="">None</option>{settings.profiles.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+            <label className="global-toggle"><input type="checkbox" checked={settings.enabled} onChange={(e) => { const enabled = e.target.checked; void updateSettings((current) => ({ ...current, enabled })); }} /> Enable Adaptive Web Layer globally</label>
+            <label className="profile-select">Profile <select value={settings.activeProfileId ?? ""} onChange={(e) => { const activeProfileId = e.target.value || null; void updateSettings((current) => ({ ...current, activeProfileId })); }}><option value="">None</option>{settings.profiles.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
             <div className="page-actions"><button onClick={() => sendPageAction("UNDO_PAGE")}>Undo</button><button onClick={() => sendPageAction("RESET_PAGE")}>Reset page</button></div>
           </>
         ) : (

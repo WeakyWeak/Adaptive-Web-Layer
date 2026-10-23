@@ -1,19 +1,19 @@
 import React, { useEffect, useState } from "react";
-import { defaultSettings, matchingSiteRule, resolveAppearance, type AppearancePrefs, type Settings } from "../../shared/settings";
-import { loadSettings, saveSettings } from "../../shared/storage";
+import { defaultSettings, resolveAppearance, type AppearancePrefs } from "../../shared/settings";
+import { withSiteRule } from "../../shared/sitePatch";
+import { useSettings } from "../useSettings";
 
 interface DetectionState { alreadyDark: boolean; explicitDark: boolean; signals: string[] }
 const initialDetection: DetectionState = { alreadyDark: false, explicitDark: false, signals: [] };
 
 export default function AppearancePanel(): React.ReactElement {
-  const [settings, setSettings] = useState<Settings>(defaultSettings());
+  const [settings, updateSettings] = useSettings();
   const [hostname, setHostname] = useState("");
   const [prefs, setPrefs] = useState<AppearancePrefs>(defaultSettings().global.appearance);
   const [detection, setDetection] = useState(initialDetection);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    void loadSettings().then(setSettings);
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       const tabId = tabs[0]?.id;
       const url = tabs[0]?.url;
@@ -30,26 +30,10 @@ export default function AppearancePanel(): React.ReactElement {
     if (hostname) setPrefs(resolveAppearance(settings, hostname));
   }, [settings, hostname]);
 
+  // Only appearance changes; everything else comes from the latest stored settings.
   const update = async (patch: Partial<AppearancePrefs>) => {
     if (!hostname) return;
-    const exactRule = settings.siteRules.find((rule) => rule.hostname === hostname);
-    const inheritedRule = exactRule ?? matchingSiteRule(settings, hostname);
-    const nextRule = {
-      hostname,
-      enabled: inheritedRule?.enabled ?? true,
-      includeSubdomains: exactRule?.includeSubdomains ?? false,
-      profileId: inheritedRule?.profileId ?? null,
-      disabledOperations: inheritedRule?.disabledOperations ?? [],
-      typography: inheritedRule?.typography ?? {},
-      appearance: { ...inheritedRule?.appearance, ...patch },
-      focus: inheritedRule?.focus ?? {},
-      motion: inheritedRule?.motion ?? {},
-    };
-    const next = { ...settings, siteRules: [...settings.siteRules.filter((rule) => rule.hostname !== hostname), nextRule] };
-    if (await saveSettings(next)) {
-      setSettings(next);
-      setSaved(true);
-    }
+    if (await updateSettings((current) => withSiteRule(current, hostname, (rule) => ({ ...rule, appearance: { ...rule.appearance, ...patch } })))) setSaved(true);
   };
 
   return (

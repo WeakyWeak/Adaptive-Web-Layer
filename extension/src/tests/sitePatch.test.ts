@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { matchIntents } from "../shared/intents";
 import { defaultSettings, isSiteEnabled, resolveAppearance, resolveFocus, resolveMotion, resolveTypography, SiteRuleSchema, type Settings } from "../shared/settings";
-import { currentAiValues, exactSiteRule, pruneSiteSelectors, resetSiteRule, restoreSiteRule, savedSiteSelectors, withSiteElements, withSitePatch, withSiteTypography } from "../shared/sitePatch";
+import { currentAiValues, exactSiteRule, pruneSiteSelectors, resetSiteRule, restoreSiteRule, savedSiteSelectors, withSiteElements, withSitePatch, withSiteRule, withSiteTypography } from "../shared/sitePatch";
 
 const base = (): Settings => defaultSettings();
 
@@ -144,5 +144,21 @@ describe("resetSiteRule (Reset page)", () => {
     const reset = resetSiteRule({ ...base(), activeProfileId: "study" }, "example.com");
     expect(resolveTypography(withSiteTypography(reset, "example.com", { fontSize: 24 }), "example.com").fontSize).toBe(24);
     expect(resolveMotion(withSitePatch(reset, "example.com", { reduceMotion: true }), "example.com").reduceMotion).toBe(true);
+  });
+});
+
+describe("withSiteRule (popup panels)", () => {
+  it("changes one group and keeps the rest of the latest rule", () => {
+    const dark = withSiteRule(base(), "example.com", (rule) => ({ ...rule, appearance: { ...rule.appearance, theme: "dark", engine: "smart" } }));
+    const focused = withSiteRule(dark, "example.com", (rule) => ({ ...rule, focus: { ...(rule.focus ?? {}), collapseSidebars: true } }));
+    expect(resolveAppearance(focused, "example.com")).toMatchObject({ theme: "dark", engine: "smart" });
+    expect(resolveFocus(focused, "example.com").collapseSidebars).toBe(true);
+  });
+
+  it("copies a subdomain-wide rule into an exact rule instead of editing it", () => {
+    const settings = { ...base(), siteRules: [SiteRuleSchema.parse({ hostname: "example.com", includeSubdomains: true, appearance: { theme: "sepia" } })] };
+    const next = withSiteRule(settings, "docs.example.com", (rule) => ({ ...rule, motion: { reduceMotion: true } }));
+    expect(exactSiteRule(next, "example.com")?.motion).toBeUndefined();
+    expect(exactSiteRule(next, "docs.example.com")).toMatchObject({ includeSubdomains: false, appearance: { theme: "sepia" }, motion: { reduceMotion: true } });
   });
 });

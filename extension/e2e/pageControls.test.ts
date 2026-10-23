@@ -159,3 +159,28 @@ test("Smart dark keeps header text readable, including headers added or restyled
     await context.close();
   }
 });
+
+test("Popup panels keep each other's changes (Focus toggle after Smart Dark)", async () => {
+  const { context, worker } = await launch();
+  try {
+    await worker.evaluate(async () => { await chrome.storage.local.set({ awl_settings: { version: 9, enabled: true, activeProfileId: "study", siteRules: [] } }); });
+    const popup = await context.newPage();
+    const extensionId = new URL(worker.url()).host;
+    // Opened as a tab, the popup's "active tab" is itself; its host stands in for a site.
+    await popup.goto(`chrome-extension://${extensionId}/popup/index.html`);
+    await popup.locator("summary", { hasText: "Appearance" }).click();
+    await popup.locator(".theme-buttons button", { hasText: "Dark" }).click();
+    await popup.locator(".appearance-engine select").selectOption("smart");
+    await popup.locator("summary", { hasText: "Focus & Motion" }).click();
+    // Toggles the active Study profile does not already turn on.
+    await popup.getByLabel("Make sticky headers static").check();
+    await popup.getByLabel("Pause autoplay media").check();
+
+    await expect.poll(async () => (await worker.evaluate(async (host) => {
+      const { awl_settings: settings } = await chrome.storage.local.get("awl_settings");
+      return (settings as { siteRules: Array<{ hostname: string; appearance?: unknown; focus?: unknown; motion?: unknown }> }).siteRules.find((rule) => rule.hostname === host);
+    }, extensionId))).toMatchObject({ appearance: { theme: "dark", engine: "smart" }, focus: { staticifyStickyHeaders: true }, motion: { pauseAutoplay: true } });
+  } finally {
+    await context.close();
+  }
+});
