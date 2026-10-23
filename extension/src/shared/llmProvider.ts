@@ -30,10 +30,19 @@ export interface ConnectionStatus {
   error?: string;
 }
 
+export interface TranslateRequest {
+  text: string;
+  source: string;
+  target: string;
+  signal?: AbortSignal;
+}
+
 export interface LLMProvider {
   readonly kind: "local" | "cloud";
   readonly supportsVision: boolean;
   generateStructured(request: StructuredRequest): Promise<unknown>;
+  /** Machine translation service (cloud only: Sarvam through the proxy). */
+  translate?(request: TranslateRequest): Promise<string>;
   testConnection(): Promise<ConnectionStatus>;
 }
 
@@ -243,6 +252,7 @@ export function proxyError(status: number, code: string | undefined, message: st
   if (status === 429) return new ProviderError("rate-limit", message);
   if (status === 408 || status === 504) return new ProviderError("timeout", message);
   if (code === "not_configured") return new ProviderError("not-configured", message);
+  if (code === "translate_failed") return new ProviderError("unknown", message, "Sarvam could not translate this text. Try a shorter selection.");
   if (code === "safety_block" || code === "refusal") return new ProviderError("safety-block", message);
   if (code === "malformed_upstream_json") return new ProviderError("invalid-json", message);
   return new ProviderError("unknown", message);
@@ -310,6 +320,35 @@ export class CloudProvider implements LLMProvider {
         if (parsed.type === "error") throw proxyError(parsed.status ?? 502, parsed.code, parsed.message ?? "Cloud request failed.");
       }
       throw new ProviderError("network", "The cloud proxy closed the connection before replying.");
+    } catch (error) {
+      if (error instanceof ProviderError) throw error;
+      if (deadline.signal.aborted) throw abortError(deadline);
+      throw new ProviderError("network", `Lost the connection to the cloud proxy: ${String(error)}`);
+    } finally {
+      deadline.clear();
+    }
+  }
+
+  /** One chunk (≤ 2000 characters) through the proxy's Sarvam backend. */
+  async translate(request: TranslateRequest): Promise<string> {
+    const deadline = withDeadline(this.opts.timeoutMs, request.signal);
+    try {
+      let response: Response;
+      try {
+        response = await fetch(this.url("/v1/translate"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${this.opts.proxyToken}` },
+          body: JSON.stringify({ text: request.text, source: request.source, target: request.target }),
+          signal: deadline.signal,
+        });
+      } catch {
+        if (deadline.signal.aborted) throw abortError(deadline);
+        throw new ProviderError("proxy-down", `Cannot reach the local cloud proxy at ${this.opts.proxyUrl}.`);
+      }
+      const body = await response.json().catch(() => null) as { text?: unknown; error?: { code?: string; message?: string } } | null;
+      if (!response.ok) throw proxyError(response.status, body?.error?.code, body?.error?.message ?? `Translation failed (HTTP ${response.status}).`);
+      if (typeof body?.text !== "string" || !body.text) throw new ProviderError("invalid-json", "The translation service returned no text.");
+      return body.text;
     } catch (error) {
       if (error instanceof ProviderError) throw error;
       if (deadline.signal.aborted) throw abortError(deadline);

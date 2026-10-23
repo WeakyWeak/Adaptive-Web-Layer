@@ -8,10 +8,12 @@ import { isSiteEnabled, normalizeHostname, resolveAppearance, resolveTypography,
 import { ProviderRouter } from "../shared/providerRouter";
 import { readJob } from "../shared/aiJob";
 import { applyJob, discardJob, runAiJob, saveProfile, setElementEnabled, undoJob, useFallback } from "./aiJobs";
+import { clearUnderstand, failOrphanedUnderstand, hideOnPage, retryUnderstand, runPageKind, runSelection } from "./comprehension";
 import { cancelJob, clearJob, failOrphanedJobs } from "./jobs";
 
 console.log("[AWL background] service worker started");
 void failOrphanedJobs();
+void failOrphanedUnderstand();
 
 async function refreshBadge(tabId: number, url?: string): Promise<void> {
   if (!url) return;
@@ -40,9 +42,12 @@ chrome.tabs.onUpdated.addListener((tabId, change, tab) => {
         void clearJob(tabId);
       }
     });
+    // Comprehension results belong to the page that was loaded.
+    cancelJob(tabId, "understand");
+    void clearUnderstand(tabId);
   }
 });
-chrome.tabs.onRemoved.addListener((tabId) => { cancelJob(tabId); void clearJob(tabId); });
+chrome.tabs.onRemoved.addListener((tabId) => { cancelJob(tabId); void clearJob(tabId); cancelJob(tabId, "understand"); void clearUnderstand(tabId); });
 
 // ── Provider status ───────────────────────────────────────────────────────────
 async function providerStatus(settings: Settings, target: "local" | "cloud") {
@@ -61,7 +66,7 @@ function ack(reply: Reply, error: string | null): void {
 }
 
 /** Handles one parsed message. Returns true when `reply` will be called asynchronously. */
-function handle(msg: AnyMessage, reply: Reply): boolean {
+function handle(msg: AnyMessage, reply: Reply, sender: chrome.runtime.MessageSender): boolean {
   switch (msg.type) {
     case "PING":
       reply({ type: "PONG", version: chrome.runtime.getManifest().version });
@@ -134,6 +139,31 @@ function handle(msg: AnyMessage, reply: Reply): boolean {
       void setElementEnabled(msg.tabId, msg.id, msg.enabled).then((error) => ack(reply, error));
       return true;
 
+    // ── P08: comprehension (results arrive through the per-tab state) ──
+    case "UNDERSTAND_RUN":
+      void runPageKind(msg.tabId, msg.kind, msg.refresh);
+      ack(reply, null);
+      return false;
+
+    case "UNDERSTAND_SELECTION":
+      // Only the page's own content script sends this; the tab is the sender's.
+      if (sender.tab?.id === undefined) { ack(reply, "Selection actions come from a page."); return false; }
+      void runSelection(sender.tab.id, msg);
+      ack(reply, null);
+      return false;
+
+    case "UNDERSTAND_RETRY":
+      void retryUnderstand(msg.tabId, msg.local).then((error) => ack(reply, error));
+      return true;
+
+    case "UNDERSTAND_HIDE":
+      void hideOnPage(msg.tabId, msg.what).then(() => ack(reply, null));
+      return true;
+
+    case "UNDERSTAND_CANCEL":
+      ack(reply, cancelJob(msg.tabId, "understand") ? null : "Nothing is running.");
+      return false;
+
     case "AI_SAVE_PROFILE":
       void saveProfile(msg.tabId, msg.name).then((error) => ack(reply, error));
       return true;
@@ -143,9 +173,9 @@ function handle(msg: AnyMessage, reply: Reply): boolean {
   }
 }
 
-chrome.runtime.onMessage.addListener((raw, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((raw, sender, sendResponse) => {
   const msg = parseMessage(raw);
-  return msg ? handle(msg, sendResponse) : false;
+  return msg ? handle(msg, sendResponse, sender) : false;
 });
 
 // The toolbar button keeps the quick-settings popup; the AI panel opens from it.

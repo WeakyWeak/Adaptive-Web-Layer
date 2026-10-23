@@ -5,7 +5,10 @@
 import { AiJobSchema, jobKey, JOB_KEY_PREFIX, readJob, type AiJob, type AiJobStatus } from "../shared/aiJob";
 
 const KEEPALIVE_MS = 20_000;
-const controllers = new Map<number, AbortController>();
+// Keyed by "<scope>:<tabId>": a page plan and a comprehension job can run side by side.
+export type JobScope = "plan" | "understand";
+const controllers = new Map<string, AbortController>();
+const controllerKey = (tabId: number, scope: JobScope) => `${scope}:${tabId}`;
 let keepalive: ReturnType<typeof setInterval> | null = null;
 
 function updateKeepalive(): void {
@@ -19,11 +22,12 @@ function updateKeepalive(): void {
 
 // Read-modify-write of a job must not interleave (progress updates race with
 // the final result), so every write for a tab runs on one promise chain.
-const queues = new Map<number, Promise<unknown>>();
+const queues = new Map<string, Promise<unknown>>();
 
-function enqueue<T>(tabId: number, task: () => Promise<T>): Promise<T> {
-  const run = (queues.get(tabId) ?? Promise.resolve()).then(task, task);
-  queues.set(tabId, run.catch(() => undefined));
+export function enqueue<T>(key: number | string, task: () => Promise<T>): Promise<T> {
+  const name = String(key);
+  const run = (queues.get(name) ?? Promise.resolve()).then(task, task);
+  queues.set(name, run.catch(() => undefined));
   return run;
 }
 
@@ -54,23 +58,29 @@ export function clearJob(tabId: number): Promise<void> {
 }
 
 /** Start tracking a running job; returns its abort signal. Cancels any older job on the tab. */
-export function beginJob(tabId: number): AbortSignal {
-  controllers.get(tabId)?.abort("superseded");
+export function beginJob(tabId: number, scope: JobScope = "plan"): AbortSignal {
+  const key = controllerKey(tabId, scope);
+  controllers.get(key)?.abort("superseded");
   const controller = new AbortController();
-  controllers.set(tabId, controller);
+  controllers.set(key, controller);
   updateKeepalive();
   return controller.signal;
 }
 
-export function endJob(tabId: number, signal: AbortSignal): void {
-  if (controllers.get(tabId)?.signal === signal) controllers.delete(tabId);
+export function endJob(tabId: number, signal: AbortSignal, scope: JobScope = "plan"): void {
+  const key = controllerKey(tabId, scope);
+  if (controllers.get(key)?.signal === signal) controllers.delete(key);
   updateKeepalive();
 }
 
-export function cancelJob(tabId: number): boolean {
-  const controller = controllers.get(tabId);
+export function cancelJob(tabId: number, scope: JobScope = "plan"): boolean {
+  const controller = controllers.get(controllerKey(tabId, scope));
   controller?.abort("cancelled");
   return Boolean(controller);
+}
+
+export function isJobRunning(tabId: number, scope: JobScope): boolean {
+  return controllers.has(controllerKey(tabId, scope));
 }
 
 /**
@@ -82,7 +92,7 @@ export async function failOrphanedJobs(): Promise<void> {
   for (const [key, value] of Object.entries(all)) {
     if (!key.startsWith(JOB_KEY_PREFIX)) continue;
     const parsed = AiJobSchema.safeParse(value);
-    if (!parsed.success || parsed.data.status !== "running" || controllers.has(parsed.data.tabId)) continue;
+    if (!parsed.success || parsed.data.status !== "running" || isJobRunning(parsed.data.tabId, "plan")) continue;
     await writeJob({
       ...parsed.data,
       status: "error",

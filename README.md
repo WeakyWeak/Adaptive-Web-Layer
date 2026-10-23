@@ -44,6 +44,8 @@ Pages:
 - http://localhost:4173/native-dark.html — native dark theme and fixed/sticky controls
 - http://localhost:4173/motion-autoplay.html — CSS and script animation, parallax, an autoplay video and a video started by script
 - http://localhost:4173/smart-header.html — brand-colour header, gradient hero, sticky bar that turns solid and a banner added late (try Smart Dark)
+- http://localhost:4173/long-article.html — jargon-heavy explainer (try **TL;DR** and **Show glossary** in the side panel)
+- http://localhost:4173/bilingual.html — prose with code, links and identifiers, plus an instruction aimed at AI (select a paragraph → ✨ Understand → Translate)
 - http://localhost:4173/clutter.html — article under a cookie banner, newsletter pop-up, promo bar and "Recommended" rail (try **Clean this page** in the side panel)
 
 ## AI setup (local, cloud, hybrid)
@@ -60,7 +62,7 @@ The AI assistant lives in Chrome's **side panel**: click the toolbar icon → **
 
 `npm run llm` finds `llama-server` on your PATH or at `~/llama.cpp/build/bin/llama-server` and loads `qwen/qwen2.5-coder-7b-instruct-q4_k_m.gguf` with every layer on the GPU. Override with `MODEL=… CTX=… npm run llm`.
 
-The proxy reads `server/.env` (copy `server/.env.example`). It needs `PROXY_TOKEN` (any long random string you choose) and at least one of `GEMINI_API_KEY` / `ANTHROPIC_API_KEY`. `npm run smoke` checks the keys without the extension.
+The proxy reads `server/.env` (copy `server/.env.example`). It needs `PROXY_TOKEN` (any long random string you choose) and at least one of `GEMINI_API_KEY` / `ANTHROPIC_API_KEY`; `SARVAM_API_KEY` enables English → Hindi translation. `npm run smoke` checks the keys without the extension (it sends one fixed test sentence to each configured service).
 
 Then in **Settings → AI**:
 - **Local only**: click **Test local connection**.
@@ -72,6 +74,7 @@ Then in **Settings → AI**:
 ```bash
 npm run eval:planner -- --target local                     # llama-server on :8080 (also scores element precision/recall)
 npm run eval:planner -- --target cloud --backend gemini --model gemini-3.5-flash-lite --token <PROXY_TOKEN>
+npm run eval:comprehension -- --target local               # TL;DR, glossary, explain, define, local translation, injection (P08 fixtures)
 ```
 It prints the valid-plan rate, accuracy on 25 cases (including prompt-injection pages) and p50/p95 latency, and writes a report to `extension/eval/results/`.
 

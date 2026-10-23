@@ -113,6 +113,8 @@ export const AiSettingsSchema = z.object({
   cloudProxyToken: z.string().max(512).default(""),
   cloudTimeoutMs: z.number().min(1000).max(300000).default(120000),
   demoMode: z.boolean().default(false),
+  /** P08: the "✨ Understand" button after selecting text on a page. */
+  selectionActions: z.boolean().default(true),
 });
 export type AiSettings = z.infer<typeof AiSettingsSchema>;
 

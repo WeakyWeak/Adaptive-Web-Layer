@@ -106,3 +106,45 @@ function strip(value: unknown, keys: readonly string[]): unknown {
 export function schemaForDialect(schema: JsonSchema, dialect: SchemaDialect): JsonSchema {
   return strip(schema, UNSUPPORTED[dialect]) as JsonSchema;
 }
+
+/**
+ * JSON Schema for the small Zod reply schemas of comprehension jobs (objects,
+ * arrays, strings, numbers, enums). Throws on anything else so a new field
+ * cannot silently lose its bounds.
+ */
+export function zodToJsonSchema(schema: z.ZodTypeAny): JsonSchema {
+  const description = schema.description ? { description: schema.description } : {};
+  if (schema instanceof z.ZodObject) {
+    const shape = schema.shape as Record<string, z.ZodTypeAny>;
+    return {
+      type: "object",
+      additionalProperties: false,
+      required: Object.keys(shape),
+      properties: Object.fromEntries(Object.entries(shape).map(([key, value]) => [key, zodToJsonSchema(value)])),
+      ...description,
+    };
+  }
+  if (schema instanceof z.ZodArray) {
+    const def = schema._def as { minLength: { value: number } | null; maxLength: { value: number } | null; type: z.ZodTypeAny };
+    return {
+      type: "array",
+      items: zodToJsonSchema(def.type),
+      ...(def.minLength ? { minItems: def.minLength.value } : {}),
+      ...(def.maxLength ? { maxItems: def.maxLength.value } : {}),
+      ...description,
+    };
+  }
+  if (schema instanceof z.ZodString) {
+    const bounds: JsonSchema = {};
+    for (const check of schema._def.checks) {
+      if (check.kind === "min") bounds.minLength = check.value;
+      if (check.kind === "max") bounds.maxLength = check.value;
+    }
+    return { type: "string", ...bounds, ...description };
+  }
+  if (schema instanceof z.ZodNumber) {
+    return { type: schema.isInt ? "integer" : "number", ...numberBounds(schema), ...description };
+  }
+  if (schema instanceof z.ZodEnum) return { type: "string", enum: [...schema.options as string[]], ...description };
+  throw new Error(`zodToJsonSchema: unsupported Zod type ${schema.constructor.name}`);
+}

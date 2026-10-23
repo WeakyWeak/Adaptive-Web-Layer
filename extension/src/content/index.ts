@@ -12,6 +12,11 @@ import { ElementPicker, focusCandidates, persistentSelector } from "./elementPic
 import { buildDomSnapshot, resolveSnapshotId } from "./domSnapshot";
 import { ElementOutline } from "./elementOutline";
 import { clearPreviewMarks, previewSelectors } from "./previewMarks";
+import { extractPageText } from "./pageText";
+import { SummaryCard } from "./summaryCard";
+import { GlossaryTooltip, registerComprehensionOps } from "./glossary";
+import { SelectionPopover } from "./selectionPopover";
+import { applyPlan, type Revert } from "../shared/registry";
 import type { ApplyContext } from "../shared/registry";
 import type { PlanChanges } from "../shared/aiFields";
 import type { PreviewElements } from "../shared/elementPlan";
@@ -40,6 +45,7 @@ if (isRestrictedPage()) {
   registerTypographyOps();
   registerAppearanceOps();
   registerFocusOps();
+  registerComprehensionOps();
 
   const styleLayer = getStyleLayer();
   // Inject bundled fonts so they are available for use
@@ -58,6 +64,13 @@ if (isRestrictedPage()) {
   let previewElements: PreviewElements | null = null;
   let peekId: string | null = null;
   const outline = new ElementOutline();
+  // P08: comprehension UI. Added next to the page's text; never changes it.
+  const summaryCard = new SummaryCard();
+  const glossaryTooltip = new GlossaryTooltip();
+  let glossaryRevert: Revert | null = null;
+  const popover = new SelectionPopover((request) => {
+    chrome.runtime.sendMessage({ type: "UNDERSTAND_SELECTION", ...request }, () => void chrome.runtime.lastError);
+  });
 
   // Build apply context from current settings
   function makeCtx(applyToWholePage: boolean): ApplyContext {
@@ -71,6 +84,7 @@ if (isRestrictedPage()) {
       const settings = nextSettings ?? await loadSettings();
       if (recordUndo && currentSettings && JSON.stringify(currentSettings) !== JSON.stringify(settings)) undoSettings = currentSettings;
       currentSettings = settings;
+      popover.setEnabled(settings.ai.selectionActions && isSiteEnabled(settings, hostname));
       if (!isSiteEnabled(settings, hostname)) {
         revertTypography();
         revertAppearance();
@@ -240,6 +254,38 @@ if (isRestrictedPage()) {
       if (!previewElements) clearPreviewMarks();
       void applyFromStorage(currentSettings ?? undefined).then(() => sendResponse({ type: "ACK", ok: true }));
       return true;
+    }
+
+    // ── P08: comprehension ──────────────────────────────────────────────────
+    if (msg.type === "GET_PAGE_TEXT") {
+      const { text, skippedCode } = extractPageText();
+      sendResponse({ type: "PAGE_TEXT", url: window.location.href, title: document.title, text, skippedCode });
+      return false;
+    }
+
+    if (msg.type === "SHOW_SUMMARY") {
+      if (msg.summary) summaryCard.show(msg.summary, () => undefined); else summaryCard.hide();
+      sendResponse({ type: "ACK", ok: true });
+      return false;
+    }
+
+    if (msg.type === "SHOW_GLOSSARY") {
+      glossaryRevert?.();
+      glossaryRevert = null;
+      if (msg.terms?.length) {
+        glossaryRevert = applyPlan(makeCtx(false), [{ opId: "glossaryHighlights", params: { terms: msg.terms.map((item) => item.term) } }]).revert;
+        glossaryTooltip.setTerms(msg.terms);
+      } else {
+        glossaryTooltip.clear();
+      }
+      sendResponse({ type: "ACK", ok: true });
+      return false;
+    }
+
+    if (msg.type === "SELECTION_RESULT") {
+      popover.showResult(msg.requestId, msg.result, msg.error);
+      sendResponse({ type: "ACK", ok: true });
+      return false;
     }
 
     // ── P07: element plans ──────────────────────────────────────────────────

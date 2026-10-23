@@ -5,6 +5,7 @@
 import { loadConfig } from "./config.ts";
 import { analyze } from "./index.ts";
 import { geminiSchemaField } from "./providers/gemini.ts";
+import { translateWithSarvam } from "./providers/sarvam.ts";
 import type { AnalyzeRequest, Backend } from "./providers/types.ts";
 
 const MODELS: Record<Backend, string> = {
@@ -49,5 +50,21 @@ async function check(backend: Backend): Promise<boolean> {
   }
 }
 
-const results = [await check("gemini"), await check("anthropic")];
+async function checkSarvam(): Promise<boolean> {
+  const cfg = loadConfig();
+  if (!cfg.sarvamApiKey) { console.log("- sarvam: skipped (no SARVAM_API_KEY in server/.env)"); return true; }
+  const started = Date.now();
+  try {
+    // A fixed synthetic sentence; the placeholder must survive translation.
+    const result = await translateWithSarvam({ text: "Open the settings page and copy [[1]] into the box.", source: "en-IN", target: "hi-IN" }, cfg.sarvamApiKey);
+    const ok = /[\u0900-\u097F]/.test(result.text);
+    console.log(`${ok ? "✓" : "✗"} sarvam (${result.modelId}): ${result.text} in ${Date.now() - started} ms; placeholder ${result.text.includes("[[1]]") ? "kept" : "NOT kept"}`);
+    return ok;
+  } catch (error) {
+    console.log(`✗ sarvam: ${(error as Error).message}`);
+    return false;
+  }
+}
+
+const results = [await check("gemini"), await check("anthropic"), await checkSarvam()];
 process.exit(results.every(Boolean) ? 0 : 1);

@@ -9,12 +9,13 @@
   "scripts": {
     "dev": "npm run dev --workspace=extension",
     "build": "npm run build --workspace=extension",
-    "typecheck": "npm run typecheck --workspace=extension",
-    "test": "npm run test --workspace=extension",
+    "typecheck": "npm run typecheck --workspace=extension && npm run typecheck --workspace=server",
+    "test": "npm run test --workspace=extension && npm run test --workspace=server",
     "lint": "npm run lint --workspace=extension",
     "fixtures": "node fixtures/serve.mjs",
     "e2e": "npm run e2e --workspace=extension",
     "eval:planner": "npm run eval:planner --workspace=extension --",
+    "eval:comprehension": "npm run eval:comprehension --workspace=extension --",
     "proxy": "npm run dev --workspace=server",
     "smoke": "npm run smoke --workspace=server",
     "llm": "bash scripts/start-llm.sh"

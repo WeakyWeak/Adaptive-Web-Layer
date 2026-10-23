@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { AiJobSchema, jobKey, readJob, type AiJob } from "../shared/aiJob";
 import type { ProviderStatus } from "../shared/messages";
+import { readUnderstand, understandKey, UnderstandStateSchema, type UnderstandState } from "../shared/comprehension";
 
 export interface ActiveTab { id: number; url: string; hostname: string }
 
@@ -67,4 +68,23 @@ export function command(message: Record<string, unknown>): Promise<string | null
       else resolve(response?.ok === false ? response.error ?? "Request failed." : null);
     });
   });
+}
+
+/** The tab's "Understand this page" state (TL;DR, glossary, last selection); updates live. */
+export function useUnderstand(tabId: number | null): UnderstandState | null {
+  const [state, setState] = useState<UnderstandState | null>(null);
+  useEffect(() => {
+    if (tabId === null) { setState(null); return; }
+    let live = true;
+    void readUnderstand(tabId).then((stored) => { if (live) setState(stored); });
+    const key = understandKey(tabId);
+    const onChanged = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
+      if (area !== "session" || !(key in changes)) return;
+      const parsed = UnderstandStateSchema.safeParse(changes[key].newValue);
+      setState(parsed.success ? parsed.data : null);
+    };
+    chrome.storage.onChanged.addListener(onChanged);
+    return () => { live = false; chrome.storage.onChanged.removeListener(onChanged); };
+  }, [tabId]);
+  return state;
 }

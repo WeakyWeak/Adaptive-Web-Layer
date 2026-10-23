@@ -3,7 +3,7 @@
 // reachable at all; that is the privacy gate, and it is tested.
 
 import type { AiSettings, CloudConsent } from "./settings";
-import { CloudProvider, LocalOpenAICompatProvider, type ConnectionStatus, type LLMProvider, type StructuredRequest } from "./llmProvider";
+import { CloudProvider, LocalOpenAICompatProvider, type ConnectionStatus, type LLMProvider, type StructuredRequest, type TranslateRequest } from "./llmProvider";
 import { ProviderError } from "./plan";
 
 export interface RouterOptions {
@@ -93,6 +93,20 @@ export class ProviderRouter {
 
   generateStructured(request: StructuredRequest): Promise<unknown> {
     return this.route(Boolean(request.images?.length), (provider) => provider.generateStructured(request), request.signal);
+  }
+
+  /**
+   * Machine translation runs only in the cloud (Sarvam via the proxy), so it is
+   * never reachable in local mode, and needs consent in hybrid and cloud mode.
+   * There is no silent local fallback: callers offer the local model explicitly.
+   */
+  async translate(request: TranslateRequest): Promise<string> {
+    if (this.options.settings.mode === "local") {
+      throw new ProviderError("unsupported", "Translation uses Sarvam, a cloud service, and local mode never sends text off this computer.", "Use the local model instead (lower quality), or switch AI mode to hybrid or cloud in Settings.");
+    }
+    const cloud = this.cloud;
+    if (!cloud.translate) throw new ProviderError("unsupported", "The cloud provider cannot translate.");
+    return this.callCloud(() => cloud.translate!(request), "Translation sends the selected text to Sarvam (cloud) through your local proxy.");
   }
 
   /** Connection checks never send page data, so they need no consent. */

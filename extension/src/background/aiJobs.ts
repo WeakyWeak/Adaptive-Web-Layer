@@ -11,6 +11,7 @@ import { ProviderRouter } from "../shared/providerRouter";
 import { cloudConsentFor, isSiteEnabled, normalizeHostname, resolveAppearance, resolveFocus, resolveMotion, resolveTypography, SiteRuleSchema } from "../shared/settings";
 import { currentAiValues, exactSiteRule, restoreSiteRule, withSiteElements, withSitePatch, type SiteElements } from "../shared/sitePatch";
 import { loadSettings, saveSettings } from "../shared/storage";
+import { consumeAllowOnce } from "./consent";
 import { beginJob, clearJob, endJob, patchJob, writeJob } from "./jobs";
 import { runPlanner } from "./planner";
 
@@ -136,10 +137,7 @@ export async function runAiJob(tabId: number, request: string): Promise<void> {
       source = router.usedProvider ?? undefined;
       if (result.retried) warnings.push("The first reply was invalid; this is the model's corrected plan.");
       warnings.push(...result.notes);
-      if (router.usedProvider === "cloud" && settings.privacy.cloudAllowOnceFor === hostname) {
-        const latest = await loadSettings();
-        await saveSettings({ ...latest, privacy: { ...latest.privacy, cloudAllowOnceFor: undefined } });
-      }
+      await consumeAllowOnce(hostname, router.usedProvider === "cloud");
     }
 
     if (signal.aborted) {

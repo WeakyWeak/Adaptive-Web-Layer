@@ -59,6 +59,9 @@ export default function AiTab({ settings, update }: { settings: Settings; update
       <Check checked={ai.demoMode} onChange={(demoMode) => change({ demoMode })}>
         <strong>Demo mode</strong> — no AI model; plans come from built-in rules (for offline demos)
       </Check>
+      <Check checked={ai.selectionActions} onChange={(selectionActions) => change({ selectionActions })}>
+        <strong>Understand button on selected text</strong> — explain simply, define or translate a selection
+      </Check>
     </div>
 
     <div className="ai-card">

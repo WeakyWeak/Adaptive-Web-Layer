@@ -12,6 +12,7 @@ export interface Config {
   geminiApiKey: string;
   anthropicApiKey: string;
   anthropicEffort: Effort;
+  sarvamApiKey: string;
   proxyToken: string;
   port: number;
   /** Exact origins allowed; empty means "any chrome-extension:// origin". */
@@ -40,6 +41,7 @@ export function loadConfig(): Config {
     // Real Anthropic keys start with "sk-ant-"; anything else is a leftover placeholder.
     anthropicApiKey: !placeholder(env.ANTHROPIC_API_KEY) && env.ANTHROPIC_API_KEY?.startsWith("sk-ant-") ? env.ANTHROPIC_API_KEY : "",
     anthropicEffort: effort && EFFORTS.includes(effort) ? effort : "low",
+    sarvamApiKey: placeholder(env.SARVAM_API_KEY) ? "" : env.SARVAM_API_KEY ?? "",
     proxyToken: placeholder(env.PROXY_TOKEN) ? "" : env.PROXY_TOKEN ?? "",
     port: Number(env.PORT ?? 8787),
     allowedOrigins: placeholder(env.ALLOWED_ORIGIN) ? [] : (env.ALLOWED_ORIGIN ?? "").split(",").map((origin) => origin.trim()).filter(Boolean),

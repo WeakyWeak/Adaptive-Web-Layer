@@ -3,6 +3,7 @@ import { pathToFileURL } from "node:url";
 import { loadConfig, type Config } from "./config.ts";
 import { analyzeWithAnthropic } from "./providers/anthropic.ts";
 import { analyzeWithGemini } from "./providers/gemini.ts";
+import { parseTranslateRequest, translateWithSarvam } from "./providers/sarvam.ts";
 import { UpstreamError, MAX_OUTPUT_TOKENS, type AnalyzeRequest, type AnalyzeResult } from "./providers/types.ts";
 
 const MAX_BODY_BYTES = 1_000_000;
@@ -118,6 +119,19 @@ async function streamAnalysis(res: ServerResponse, input: AnalyzeRequest, cfg: C
   }
 }
 
+/** Short calls (one ≤ 2000-character chunk), so a plain JSON reply is enough. */
+export async function handleTranslate(res: ServerResponse, body: unknown, cfg: Config, fetchImpl: typeof fetch = fetch): Promise<void> {
+  const input = parseTranslateRequest(body);
+  if (!input) { error(res, 400, "invalid_request", "Translation needs text (1–2000 characters) and a supported language pair."); return; }
+  if (!cfg.sarvamApiKey) { error(res, 503, "not_configured", "SARVAM_API_KEY is not set in server/.env."); return; }
+  try {
+    sendJson(res, 200, await translateWithSarvam(input, cfg.sarvamApiKey, fetchImpl));
+  } catch (caught) {
+    const failure = caught instanceof UpstreamError ? caught : new UpstreamError(502, "translate_failed", "Translation failed.");
+    error(res, failure.status, failure.code, failure.message);
+  }
+}
+
 const server = createServer(async (req, res) => {
   const cfg = loadConfig();
   if (!applyCors(req, res, cfg)) return;
@@ -127,10 +141,10 @@ const server = createServer(async (req, res) => {
     return;
   }
   if (req.method === "GET" && req.url === "/health") {
-    sendJson(res, 200, { ok: true, backends: { gemini: Boolean(cfg.geminiApiKey), anthropic: Boolean(cfg.anthropicApiKey) } });
+    sendJson(res, 200, { ok: true, backends: { gemini: Boolean(cfg.geminiApiKey), anthropic: Boolean(cfg.anthropicApiKey), sarvam: Boolean(cfg.sarvamApiKey) } });
     return;
   }
-  if (req.method !== "POST" || req.url !== "/v1/analyze") { error(res, 404, "not_found", "Endpoint not found."); return; }
+  if (req.method !== "POST" || (req.url !== "/v1/analyze" && req.url !== "/v1/translate")) { error(res, 404, "not_found", "Endpoint not found."); return; }
   if (rateLimited(req)) { error(res, 429, "rate_limited", "Too many requests; try again in a minute."); return; }
   let body: unknown;
   try { body = await readJson(req); } catch (caught) {
@@ -138,6 +152,7 @@ const server = createServer(async (req, res) => {
     error(res, code === "body_too_large" ? 413 : 400, code, "Request body must be valid JSON within the size limit.");
     return;
   }
+  if (req.url === "/v1/translate") { await handleTranslate(res, body, cfg); return; }
   const input = parseAnalyzeRequest(body);
   if (!input) { error(res, 400, "invalid_request", "Request fields are invalid or exceed limits."); return; }
   const configured = input.backend === "anthropic" ? cfg.anthropicApiKey : cfg.geminiApiKey;
@@ -153,7 +168,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const cfg = loadConfig();
   server.listen(cfg.port, "127.0.0.1", () => {
     // Safe operational event only: never include keys, tokens, or request bodies.
-    const backends = [cfg.geminiApiKey && "gemini", cfg.anthropicApiKey && "anthropic"].filter(Boolean).join(", ") || "none";
+    const backends = [cfg.geminiApiKey && "gemini", cfg.anthropicApiKey && "anthropic", cfg.sarvamApiKey && "sarvam"].filter(Boolean).join(", ") || "none";
     console.log(`Adaptive Web Layer proxy listening on http://127.0.0.1:${cfg.port} (backends: ${backends})`);
     if (!cfg.proxyToken) console.warn("PROXY_TOKEN is not set in server/.env; every request will be rejected.");
   });

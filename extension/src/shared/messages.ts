@@ -2,6 +2,8 @@ import { z } from "zod";
 import { FONT_FAMILY_OPTIONS } from "./settings";
 import { DomSnapshotSchema } from "./plan";
 import { PreviewElementsSchema } from "./elementPlan";
+import { GlossaryTermSchema, MAX_SELECTION_CHARS, PAGE_KINDS, SELECTION_KINDS, SelectionResultSchema, SummaryResultSchema } from "./comprehension";
+import { TARGET_CODES } from "./languages";
 
 // ─── Typed message protocol (Zod discriminated union) ───────────────────────
 // All messages between popup ↔ content script ↔ background use this schema.
@@ -147,6 +149,37 @@ export const SetCloudConsentSchema = z.object({
 
 // ── Generic ack ───────────────────────────────────────────────────────────────
 
+// ── P08: comprehension ─────────────────────────────────────────────────────────
+// Side panel → background
+export const UnderstandRunSchema = z.object({ type: z.literal("UNDERSTAND_RUN"), tabId: z.number().int().nonnegative(), kind: z.enum(PAGE_KINDS), refresh: z.boolean().optional() });
+export const UnderstandHideSchema = z.object({ type: z.literal("UNDERSTAND_HIDE"), tabId: z.number().int().nonnegative(), what: z.enum(["summary", "glossary"]) });
+export const UnderstandRetrySchema = z.object({ type: z.literal("UNDERSTAND_RETRY"), tabId: z.number().int().nonnegative(), local: z.boolean().optional() });
+export const UnderstandCancelSchema = z.object({ type: z.literal("UNDERSTAND_CANCEL"), tabId: z.number().int().nonnegative() });
+// Content (selection popover) → background; the tab comes from the sender.
+export const UnderstandSelectionSchema = z.object({
+  type: z.literal("UNDERSTAND_SELECTION"),
+  requestId: z.string().min(1).max(64),
+  kind: z.enum(SELECTION_KINDS),
+  // Code markers from the extractor may add a little to the visible length.
+  text: z.string().min(1).max(MAX_SELECTION_CHARS + 400),
+  context: z.string().max(2000).default(""),
+  target: z.enum(TARGET_CODES).optional(),
+  local: z.boolean().optional(),
+});
+// Background → content
+export const GetPageTextSchema = z.object({ type: z.literal("GET_PAGE_TEXT") });
+export const PageTextSchema = z.object({ type: z.literal("PAGE_TEXT"), url: z.string(), title: z.string(), text: z.string().max(400_000), skippedCode: z.number() });
+export const ShowSummarySchema = z.object({ type: z.literal("SHOW_SUMMARY"), summary: SummaryResultSchema.nullable() });
+export const ShowGlossarySchema = z.object({ type: z.literal("SHOW_GLOSSARY"), terms: z.array(GlossaryTermSchema).nullable() });
+export const SelectionResultMessageSchema = z.object({
+  type: z.literal("SELECTION_RESULT"),
+  requestId: z.string().max(64),
+  result: SelectionResultSchema.optional(),
+  error: z.object({ code: z.string(), message: z.string(), hint: z.string() }).optional(),
+});
+export type PageText = z.infer<typeof PageTextSchema>;
+export type UnderstandSelection = z.infer<typeof UnderstandSelectionSchema>;
+
 export const AckSchema = z.object({
   type: z.literal("ACK"),
   ok: z.boolean(),
@@ -186,6 +219,17 @@ export const AnyMessageSchema = z.discriminatedUnion("type", [
   ProviderStatusSchema,
   TestProviderConnectionSchema,
   SetCloudConsentSchema,
+  // P08
+  UnderstandRunSchema,
+  UnderstandHideSchema,
+  UnderstandRetrySchema,
+  UnderstandCancelSchema,
+  UnderstandSelectionSchema,
+  GetPageTextSchema,
+  PageTextSchema,
+  ShowSummarySchema,
+  ShowGlossarySchema,
+  SelectionResultMessageSchema,
   AckSchema,
 ]);
 export type AnyMessage = z.infer<typeof AnyMessageSchema>;

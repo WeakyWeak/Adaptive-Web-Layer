@@ -107,3 +107,12 @@ footer { display: flex; justify-content: flex-end; }
 .badge.action-highlight { background: #713f12; color: #fef08a; }
 .saved-rules { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
 details summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+
+/* P08: Understand this page */
+.understand-panel { display: flex; flex-direction: column; gap: 6px; }
+.quote { margin: 0; padding: 2px 8px; border-left: 3px solid var(--border); max-height: 80px; overflow: auto; }
+.result-text { margin: 0; white-space: pre-wrap; }
+.result-text[lang="hi"] { font-size: 15px; line-height: 1.7; }
+.glossary { margin: 6px 0; }
+.glossary dt { font-weight: 600; }
+.glossary dd { margin: 0 0 6px; color: var(--muted); }
