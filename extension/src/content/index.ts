@@ -20,7 +20,9 @@ import { applyPlan, type Revert } from "../shared/registry";
 import type { ApplyContext } from "../shared/registry";
 import type { PlanChanges } from "../shared/aiFields";
 import type { PreviewElements } from "../shared/elementPlan";
-import { resetSiteRule, savedSiteSelectors, withSiteElements, withSitePatch } from "../shared/sitePatch";
+import { currentAiValues, resetSiteRule, savedSiteSelectors, withSiteElements, withSitePatch } from "../shared/sitePatch";
+import { getContentRegionSelector } from "./domUtils";
+import { inspectPage } from "./inspector";
 
 // Detect restricted pages (chrome://, chrome-extension://, Web Store, etc.)
 function isRestrictedPage(): boolean {
@@ -293,6 +295,26 @@ if (isRestrictedPage()) {
       popover.showResult(msg.requestId, msg.result, msg.error);
       sendResponse({ type: "ACK", ok: true });
       return false;
+    }
+
+    // ── P09: accessibility inspector ────────────────────────────────────────
+    if (msg.type === "INSPECT_PAGE") {
+      void (async () => {
+        // Measure what the page shows with the latest saved settings (a fix may have just been saved).
+        const settings = await loadSettings();
+        await applyFromStorage(settings);
+        await new Promise((resolve) => setTimeout(resolve, 60));
+        const effective = previewChanges ? withSitePatch(settings, hostname, previewChanges) : settings;
+        const appearance = resolveAppearance(effective, hostname);
+        const region = document.querySelector(getContentRegionSelector(settings.global.applyToWholePage)) ?? document.body;
+        const report = await inspectPage(document, {
+          region,
+          current: currentAiValues(effective, hostname),
+          smartColours: appearance.engine === "smart" && appearance.theme !== "sepia",
+        });
+        sendResponse({ type: "INSPECT_RESULT", report });
+      })().catch((error) => sendResponse({ type: "ACK", ok: false, error: String(error) }));
+      return true;
     }
 
     // ── P07: element plans ──────────────────────────────────────────────────

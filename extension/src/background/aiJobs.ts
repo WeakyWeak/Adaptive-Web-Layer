@@ -14,6 +14,7 @@ import { loadSettings, saveSettings } from "../shared/storage";
 import { consumeAllowOnce } from "./consent";
 import { beginJob, clearJob, endJob, patchJob, writeJob } from "./jobs";
 import { runPlanner } from "./planner";
+import { tabMessage, tabPage } from "./tabs";
 
 const DEMO_PLAN: Plan = {
   interpretedRequest: "Make the article easier to read",
@@ -22,14 +23,6 @@ const DEMO_PLAN: Plan = {
   confidence: 1,
 };
 
-function tabMessage<T>(tabId: number, message: unknown): Promise<T | null> {
-  return new Promise((resolve) => {
-    chrome.tabs.sendMessage(tabId, message, (response: T) => {
-      resolve(chrome.runtime.lastError ? null : response ?? null);
-    });
-  });
-}
-
 /** Show changes + element items on the page without saving; null clears the preview. */
 function setPreview(tabId: number, preview: { changes: PlanChanges; elements?: readonly ElementItem[] } | null) {
   const elements: PreviewElements | undefined = preview?.elements?.length ? previewElementsOf(preview.elements) : undefined;
@@ -37,13 +30,7 @@ function setPreview(tabId: number, preview: { changes: PlanChanges; elements?: r
 }
 
 async function tabHostname(tabId: number): Promise<string | null> {
-  try {
-    const tab = await chrome.tabs.get(tabId);
-    const url = new URL(tab.url ?? "");
-    return url.protocol === "http:" || url.protocol === "https:" ? normalizeHostname(url.hostname) : null;
-  } catch {
-    return null;
-  }
+  return (await tabPage(tabId))?.hostname ?? null;
 }
 
 async function snapshotOf(tabId: number): Promise<DomSnapshot | null> {

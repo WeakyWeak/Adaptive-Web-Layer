@@ -4,6 +4,7 @@ import { DomSnapshotSchema } from "./plan";
 import { PreviewElementsSchema } from "./elementPlan";
 import { GlossaryTermSchema, MAX_SELECTION_CHARS, PAGE_KINDS, SELECTION_KINDS, SelectionResultSchema, SummaryResultSchema } from "./comprehension";
 import { TARGET_CODES } from "./languages";
+import { InspectReportSchema } from "./inspector";
 
 // ─── Typed message protocol (Zod discriminated union) ───────────────────────
 // All messages between popup ↔ content script ↔ background use this schema.
@@ -183,6 +184,16 @@ export const SelectionResultMessageSchema = z.object({
 export type PageText = z.infer<typeof PageTextSchema>;
 export type UnderstandSelection = z.infer<typeof UnderstandSelectionSchema>;
 
+// ── P09: accessibility inspector ──────────────────────────────────────────────
+// Side panel → background (results arrive through the per-tab inspect state).
+export const InspectRunSchema = z.object({ type: z.literal("INSPECT_RUN"), tabId: z.number().int().nonnegative() });
+export const InspectActionSchema = z.object({ type: z.enum(["INSPECT_EXPLAIN", "INSPECT_UNDO", "INSPECT_CANCEL"]), tabId: z.number().int().nonnegative() });
+/** Apply the suggested fixes of these findings (one undoable AI job). */
+export const InspectApplySchema = z.object({ type: z.literal("INSPECT_APPLY"), tabId: z.number().int().nonnegative(), ids: z.array(z.string().min(1).max(48)).min(1).max(60) });
+// Background → content: measure the page.
+export const InspectPageSchema = z.object({ type: z.literal("INSPECT_PAGE") });
+export const InspectResultSchema = z.object({ type: z.literal("INSPECT_RESULT"), report: InspectReportSchema });
+
 export const AckSchema = z.object({
   type: z.literal("ACK"),
   ok: z.boolean(),
@@ -235,6 +246,12 @@ export const AnyMessageSchema = z.discriminatedUnion("type", [
   GlossaryShownSchema,
   GlossaryRevealSchema,
   SelectionResultMessageSchema,
+  // P09
+  InspectRunSchema,
+  InspectActionSchema,
+  InspectApplySchema,
+  InspectPageSchema,
+  InspectResultSchema,
   AckSchema,
 ]);
 export type AnyMessage = z.infer<typeof AnyMessageSchema>;

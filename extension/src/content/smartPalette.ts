@@ -1,5 +1,8 @@
 import { compositeColor, contrastRatio, parseCssColor, relativeLuminance, type Color } from "../lib/color";
 import { APPEARANCE_PRESERVE_SELECTOR } from "./appearancePreserve";
+import { coversWithImage, createBackdropResolver, WHITE } from "./contrast";
+
+export { coversWithImage } from "./contrast";
 
 export type SmartTheme = "light" | "dark";
 
@@ -8,7 +11,6 @@ export interface SmartColorChanges {
   color?: string;
 }
 
-const WHITE: Color = { r: 255, g: 255, b: 255, a: 1 };
 // What shows behind a page that paints no background, once the theme sets color-scheme.
 const CANVAS: Record<SmartTheme, Color> = { light: WHITE, dark: { r: 18, g: 18, b: 18, a: 1 } };
 // Text colours in order of preference; the other theme's are the fallback for
@@ -61,21 +63,6 @@ export function mapSmartColors(background: string, foreground: string, theme: Sm
   return { ...(backgroundColor ? { backgroundColor } : {}), ...(color ? { color } : {}) };
 }
 
-/**
- * True when an image or gradient fills the element, so the colour under its
- * text is unknown. Thin layers (underline gradients, small icons) do not count.
- */
-export function coversWithImage(element: Element, style: CSSStyleDeclaration): boolean {
-  const image = style.backgroundImage;
-  if (!image || image === "none") return false;
-  const size = (style.backgroundSize || "auto").split(",")[0];
-  if (/\b[0-3]?\d(\.\d+)?px\b/.test(size)) return false;
-  if (image.includes("gradient(") || /cover|contain/.test(size)) return true;
-  const box = element.getBoundingClientRect();
-  return box.width >= 200 && box.height >= 60;
-}
-
-type Backdrop = Color | "image";
 
 export interface SmartPalette {
   /** Current rules for every marked element. */
@@ -111,23 +98,7 @@ export function createSmartPalette(doc: Document, theme: SmartTheme, onChange?: 
   /** Read every element first, then mark: one style recalculation per batch. */
   const run = (elements: Element[], before = new Map<Element, Previous>()) => {
     const pending = new Map<Element, Color>();
-    const memo = new Map<Element, Backdrop>();
-    const backdropOf = (element: Element | null): Backdrop => {
-      if (!element) return CANVAS[theme];
-      const known = memo.get(element);
-      if (known) return known;
-      let result: Backdrop;
-      let style: CSSStyleDeclaration | null = null;
-      try { style = win.getComputedStyle(element); } catch { /* detached */ }
-      const own = pending.get(element) ?? (style ? parseCssColor(style.backgroundColor) : null);
-      if (style && coversWithImage(element, style)) result = "image";
-      else if (own && own.a > 0) {
-        const below = own.a < 1 ? backdropOf(element.parentElement) : own;
-        result = below === "image" ? "image" : own.a < 1 ? compositeColor(own, below) : own;
-      } else result = backdropOf(element.parentElement);
-      memo.set(element, result);
-      return result;
-    };
+    const backdropOf = createBackdropResolver(win, { canvas: CANVAS[theme], override: (element) => pending.get(element) });
 
     const changes: Array<{ element: Element; declarations: string }> = [];
     for (const element of elements) {

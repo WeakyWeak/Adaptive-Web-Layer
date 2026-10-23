@@ -28,7 +28,7 @@ export const AiJobSchema = z.object({
   received: z.number().default(0),
   startedAt: z.number(),
   updatedAt: z.number(),
-  source: z.enum(["local", "cloud", "demo", "rules"]).optional(),
+  source: z.enum(["local", "cloud", "demo", "rules", "inspector"]).optional(),
   interpretedRequest: z.string().optional(),
   changes: ChangesSchema.optional(),
   descriptions: z.array(z.string()).optional(),

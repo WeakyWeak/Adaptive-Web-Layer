@@ -9,11 +9,13 @@ import { ProviderRouter } from "../shared/providerRouter";
 import { readJob } from "../shared/aiJob";
 import { applyJob, discardJob, runAiJob, saveProfile, setElementEnabled, undoJob, useFallback } from "./aiJobs";
 import { clearUnderstand, failOrphanedUnderstand, hideOnPage, retryUnderstand, runPageKind, runSelection } from "./comprehension";
+import { applyInspectFixes, cancelInspect, clearInspect, explainInspect, failOrphanedInspect, runInspect, undoInspectFixes } from "./inspect";
 import { cancelJob, clearJob, failOrphanedJobs } from "./jobs";
 
 console.log("[AWL background] service worker started");
 void failOrphanedJobs();
 void failOrphanedUnderstand();
+void failOrphanedInspect();
 
 async function refreshBadge(tabId: number, url?: string): Promise<void> {
   if (!url) return;
@@ -45,9 +47,12 @@ chrome.tabs.onUpdated.addListener((tabId, change, tab) => {
     // Comprehension results belong to the page that was loaded.
     cancelJob(tabId, "understand");
     void clearUnderstand(tabId);
+    // Inspector findings point at elements of the page that was loaded.
+    cancelJob(tabId, "inspect");
+    void clearInspect(tabId);
   }
 });
-chrome.tabs.onRemoved.addListener((tabId) => { cancelJob(tabId); void clearJob(tabId); cancelJob(tabId, "understand"); void clearUnderstand(tabId); });
+chrome.tabs.onRemoved.addListener((tabId) => { cancelJob(tabId); void clearJob(tabId); cancelJob(tabId, "understand"); void clearUnderstand(tabId); cancelJob(tabId, "inspect"); void clearInspect(tabId); });
 
 // ── Provider status ───────────────────────────────────────────────────────────
 async function providerStatus(settings: Settings, target: "local" | "cloud") {
@@ -162,6 +167,27 @@ function handle(msg: AnyMessage, reply: Reply, sender: chrome.runtime.MessageSen
 
     case "UNDERSTAND_CANCEL":
       ack(reply, cancelJob(msg.tabId, "understand") ? null : "Nothing is running.");
+      return false;
+
+    // ── P09: inspector (results arrive through the per-tab inspect state) ──
+    case "INSPECT_RUN":
+      void runInspect(msg.tabId).then(() => ack(reply, null));
+      return true;
+
+    case "INSPECT_EXPLAIN":
+      void explainInspect(msg.tabId).then((error) => ack(reply, error));
+      return true;
+
+    case "INSPECT_APPLY":
+      void applyInspectFixes(msg.tabId, msg.ids).then((error) => ack(reply, error));
+      return true;
+
+    case "INSPECT_UNDO":
+      void undoInspectFixes(msg.tabId).then((error) => ack(reply, error));
+      return true;
+
+    case "INSPECT_CANCEL":
+      ack(reply, cancelInspect(msg.tabId));
       return false;
 
     case "AI_SAVE_PROFILE":

@@ -119,3 +119,26 @@ details summary { cursor: pointer; color: var(--muted); font-size: 12px; }
 .help { margin: 0; padding-left: 16px; display: flex; flex-direction: column; gap: 3px; }
 .glossary dt { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 button.link { padding: 0 6px; font-size: 12px; }
+
+/* P09: Inspect */
+.inspect-panel { display: flex; flex-direction: column; gap: 6px; }
+.score-card { gap: 4px; }
+.score-line { display: flex; align-items: center; gap: 12px; }
+.score { font-size: 30px; font-weight: 700; line-height: 1; min-width: 52px; text-align: center; padding: 6px 4px; border-radius: 8px; }
+.score-good { background: var(--ok); color: #bbf7d0; }
+.score-fair { background: var(--warn); color: #fef08a; }
+.score-poor { background: var(--bad); color: #fecaca; }
+.finding-group h3 { margin: 8px 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+.severity-high { color: #fca5a5; }
+.severity-medium { color: #fde68a; }
+.severity-low { color: var(--muted); }
+.finding-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.finding { padding: 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); display: flex; flex-direction: column; gap: 4px; }
+.finding:hover, .finding:focus-within, .finding.pinned { border-color: var(--accent); }
+.finding p { margin: 0; }
+.finding-head { display: flex; gap: 6px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.finding-detail { overflow-wrap: anywhere; }
+.chip.conf-high { background: #1e3a8a; color: #bfdbfe; }
+.chip.conf-medium { background: #334155; color: #cbd5e1; }
+.chip.conf-low { background: var(--surface); color: var(--muted); border: 1px dashed var(--border); }
+.interpretation { border-style: dashed; }

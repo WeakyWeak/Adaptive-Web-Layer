@@ -6,7 +6,7 @@ import { AiJobSchema, jobKey, JOB_KEY_PREFIX, readJob, type AiJob, type AiJobSta
 
 const KEEPALIVE_MS = 20_000;
 // Keyed by "<scope>:<tabId>": a page plan and a comprehension job can run side by side.
-export type JobScope = "plan" | "understand";
+export type JobScope = "plan" | "understand" | "inspect";
 const controllers = new Map<string, AbortController>();
 const controllerKey = (tabId: number, scope: JobScope) => `${scope}:${tabId}`;
 let keepalive: ReturnType<typeof setInterval> | null = null;

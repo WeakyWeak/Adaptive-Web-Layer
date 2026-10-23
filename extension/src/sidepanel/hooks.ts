@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
-import { AiJobSchema, jobKey, readJob, type AiJob } from "../shared/aiJob";
+import type { z } from "zod";
+import { AiJobSchema, jobKey, type AiJob } from "../shared/aiJob";
 import type { ProviderStatus } from "../shared/messages";
-import { readUnderstand, understandKey, UnderstandStateSchema, type UnderstandState } from "../shared/comprehension";
+import { understandKey, UnderstandStateSchema, type UnderstandState } from "../shared/comprehension";
+import { inspectKey, InspectStateSchema, type InspectState } from "../shared/inspector";
 
 export interface ActiveTab { id: number; url: string; hostname: string }
 
@@ -29,23 +31,27 @@ export function useActiveTab(): ActiveTab | null {
   return tab;
 }
 
-/** The persisted AI job for a tab; updates live as the background writes it. */
-export function useAiJob(tabId: number | null): AiJob | null {
-  const [job, setJob] = useState<AiJob | null>(null);
+/** A per-tab record in chrome.storage.session, kept live as the background rewrites it. */
+function useSessionRecord<T>(tabId: number | null, keyOf: (tabId: number) => string, schema: z.ZodType<T, z.ZodTypeDef, unknown>): T | null {
+  const [record, setRecord] = useState<T | null>(null);
   useEffect(() => {
-    if (tabId === null) { setJob(null); return; }
+    if (tabId === null) { setRecord(null); return; }
     let live = true;
-    void readJob(tabId).then((stored) => { if (live) setJob(stored); });
-    const key = jobKey(tabId);
+    const key = keyOf(tabId);
+    const read = (value: unknown) => { const parsed = schema.safeParse(value); return parsed.success ? parsed.data : null; };
+    void chrome.storage.session.get(key).then((stored) => { if (live) setRecord(read(stored[key])); }).catch(() => undefined);
     const onChanged = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
-      if (area !== "session" || !(key in changes)) return;
-      const parsed = AiJobSchema.safeParse(changes[key].newValue);
-      setJob(parsed.success ? parsed.data : null);
+      if (area === "session" && key in changes) setRecord(read(changes[key].newValue));
     };
     chrome.storage.onChanged.addListener(onChanged);
     return () => { live = false; chrome.storage.onChanged.removeListener(onChanged); };
-  }, [tabId]);
-  return job;
+  }, [tabId, keyOf, schema]);
+  return record;
+}
+
+/** The persisted AI job for a tab; updates live as the background writes it. */
+export function useAiJob(tabId: number | null): AiJob | null {
+  return useSessionRecord(tabId, jobKey, AiJobSchema);
 }
 
 export function useProviderStatus(refreshKey: unknown): ProviderStatus | null {
@@ -72,19 +78,10 @@ export function command(message: Record<string, unknown>): Promise<string | null
 
 /** The tab's "Understand this page" state (TL;DR, glossary, last selection); updates live. */
 export function useUnderstand(tabId: number | null): UnderstandState | null {
-  const [state, setState] = useState<UnderstandState | null>(null);
-  useEffect(() => {
-    if (tabId === null) { setState(null); return; }
-    let live = true;
-    void readUnderstand(tabId).then((stored) => { if (live) setState(stored); });
-    const key = understandKey(tabId);
-    const onChanged = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
-      if (area !== "session" || !(key in changes)) return;
-      const parsed = UnderstandStateSchema.safeParse(changes[key].newValue);
-      setState(parsed.success ? parsed.data : null);
-    };
-    chrome.storage.onChanged.addListener(onChanged);
-    return () => { live = false; chrome.storage.onChanged.removeListener(onChanged); };
-  }, [tabId]);
-  return state;
+  return useSessionRecord(tabId, understandKey, UnderstandStateSchema);
+}
+
+/** The tab's inspector state (findings, score, AI interpretation); updates live. */
+export function useInspect(tabId: number | null): InspectState | null {
+  return useSessionRecord(tabId, inspectKey, InspectStateSchema);
 }

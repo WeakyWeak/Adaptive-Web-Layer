@@ -12,6 +12,7 @@ const SOURCE_LABEL: Record<NonNullable<AiJob["source"]>, string> = {
   cloud: "Cloud AI",
   demo: "Demo mode",
   rules: "Built-in rules",
+  inspector: "Inspector fix",
 };
 
 function ChangeList({ items }: { items: string[] }): React.ReactElement {

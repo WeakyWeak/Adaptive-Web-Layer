@@ -1,13 +1,14 @@
 // ─── Comprehension prompts + validated model calls ───────────────────────────
 // Text reaching here is already masked (code, links, emails and identifiers are
 // [[n]] placeholders). Page text is wrapped in <page_data> as untrusted data;
-// every reply is parsed with its Zod schema and retried once if invalid.
+// every reply is parsed with its Zod schema and retried once if invalid
+// (runValidated).
 
 import type { z } from "zod";
 import { REPLY_SCHEMAS, replyJsonSchema, type ComprehensionKind } from "../shared/comprehension";
 import { languageName } from "../shared/languages";
-import { ProviderError } from "../shared/plan";
 import type { StructuredGenerator } from "./planner";
+import { runValidated } from "./structured";
 
 export type Reply<K extends ComprehensionKind> = z.infer<typeof REPLY_SCHEMAS[K]>;
 
@@ -58,7 +59,6 @@ export function buildComprehensionUserPrompt(kind: ComprehensionKind, input: Com
 }
 
 const MAX_TOKENS: Record<ComprehensionKind, number> = { summarize: 700, glossary: 1200, simplify: 2048, define: 300, translate: 3072 };
-const MAX_ATTEMPTS = 2;
 
 /** One validated reply (still masked); one corrective retry on bad JSON or schema errors. */
 export async function runComprehension<K extends ComprehensionKind>(
@@ -67,30 +67,12 @@ export async function runComprehension<K extends ComprehensionKind>(
   input: ComprehensionInput,
   options: { signal?: AbortSignal; onProgress?: (received: number) => void } = {},
 ): Promise<{ reply: Reply<K>; retried: boolean }> {
-  const schema = REPLY_SCHEMAS[kind];
-  const systemPrompt = buildComprehensionSystemPrompt(kind, input);
-  let errors: string[] = [];
-  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    let raw: unknown;
-    try {
-      raw = await generator.generateStructured({
-        systemPrompt,
-        userPrompt: buildComprehensionUserPrompt(kind, input, errors),
-        schema: replyJsonSchema(kind),
-        signal: options.signal,
-        maxTokens: MAX_TOKENS[kind],
-        onProgress: options.onProgress,
-      });
-    } catch (error) {
-      if (error instanceof ProviderError && error.code === "invalid-json" && attempt + 1 < MAX_ATTEMPTS) {
-        errors = ["Your reply was not a valid JSON object."];
-        continue;
-      }
-      throw error;
-    }
-    const parsed = schema.safeParse(raw);
-    if (parsed.success) return { reply: parsed.data as Reply<K>, retried: attempt > 0 };
-    errors = parsed.error.issues.slice(0, 6).map((issue) => `${issue.path.join(".") || "reply"}: ${issue.message}`);
-  }
-  throw new ProviderError("invalid-plan", `The model's reply was rejected: ${errors.join("; ")}`, "Try again, or switch to a larger model.");
+  const { reply, retried } = await runValidated(generator, {
+    systemPrompt: buildComprehensionSystemPrompt(kind, input),
+    userPrompt: (errors) => buildComprehensionUserPrompt(kind, input, errors),
+    schema: REPLY_SCHEMAS[kind],
+    jsonSchema: replyJsonSchema(kind),
+    maxTokens: MAX_TOKENS[kind],
+  }, options);
+  return { reply: reply as Reply<K>, retried };
 }

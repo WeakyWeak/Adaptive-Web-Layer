@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Planted accessibility issues — City Water Bulletin</title>
+  <!--
+    P09 fixture. Every inspector check has a planted problem here; the comment
+    on each block names it. The clean counterpart is a11y-clean.html.
+  -->
+  <style>
+    body { margin: 0; font: 16px/1.5 system-ui, sans-serif; color: #222222; background: #ffffff; }
+    /* sticky-cover (top): a tall header that follows the scroll */
+    .site-header { position: sticky; top: 0; height: 104px; background: #0f172a; color: #e2e8f0; display: flex; align-items: center; gap: 24px; padding: 0 24px; z-index: 5; }
+    .site-header a { color: #cbd5e1; }
+    /* low-contrast (gradient, uncertain): white text over a dark-to-light gradient */
+    .hero { background: linear-gradient(90deg, #1e3a8a, #bfdbfe); color: #ffffff; padding: 28px 24px; font-size: 18px; }
+    /* long-lines: a 1200px column of 16px text (~150 characters per line) */
+    main { max-width: 1200px; margin: 0 auto; padding: 0 24px 200px; }
+    /* small-text */
+    .fine-print { font-size: 11px; }
+    /* low-contrast: light grey on white (2.3:1) and translucent black (2.0:1) */
+    .faint { color: #aaaaaa; }
+    .ghost { color: rgba(0, 0, 0, 0.3); }
+    /* low-contrast with nested, translucent backgrounds */
+    .dark-panel { background: #333333; padding: 12px; }
+    .dark-panel .tint { background: rgba(255, 255, 255, 0.1); color: #666666; padding: 8px; }
+    /* tight-line-height */
+    .cramped { line-height: 1.05; }
+    /* link-distinction: links coloured like the text, no underline */
+    a.quiet { color: #222222; text-decoration: none; }
+    /* focus-indicator: outline removed with nothing in its place */
+    a:focus, button:focus { outline: none; }
+    /* clipped-content */
+    .clip { height: 48px; overflow: hidden; border: 1px solid #ddd; }
+    /* overlap: an absolutely positioned badge over a paragraph */
+    .overlap-demo { position: relative; }
+    .overlap-demo .badge { position: absolute; top: 0; left: 0; width: 320px; height: 44px; background: #fde68a; color: #111; }
+    /* horizontal-overflow */
+    .wide-strip { width: 1700px; background: #f1f5f9; }
+    /* sticky-cover (bottom): a fixed promo bar, no controls inside */
+    .promo-bar { position: fixed; left: 0; right: 0; bottom: 0; height: 130px; background: #7c2d12; color: #ffedd5; display: flex; align-items: center; justify-content: center; font-size: 20px; }
+  </style>
+</head>
+<body>
+  <header class="site-header"><strong>City Water Bulletin</strong><nav aria-label="Sections"><a href="#notices">Notices</a> <a href="#billing">Billing</a> <a href="#help">Help</a></nav></header>
+  <div class="hero">Water supply notice for the eastern wards: read the schedule below before planning your week.</div>
+  <main>
+    <!-- multiple-h1 -->
+    <h1>Supply schedule for this week</h1>
+    <h1>Eastern wards notice</h1>
+    <h2>What changes</h2>
+    <p>Mains flushing starts on Monday in wards 12 to 18. Expect lower pressure between six and ten in the morning while crews open hydrants along the main roads. Store a bucket of water the night before if you need it early, and keep taps closed while the work goes on so sediment does not reach your tank. The work moves north each day, and the bulletin board at the ward office lists the streets for each morning.</p>
+    <p class="faint">Residents with medical equipment that needs running water can call the priority line to be told before the supply drops in their street. Calls are answered from seven in the morning until eight at night on weekdays.</p>
+    <p class="ghost">Tankers will stand at the ward offices from nine until five on each flushing day; bring your own containers, at most forty litres per household per visit.</p>
+    <div class="dark-panel"><div class="tint">Archived notices from last year remain available at the main office counter during working hours.</div></div>
+    <!-- skipped-heading: h2 then h4 -->
+    <h4>Pressure after the work</h4>
+    <p class="cramped">Pressure returns to normal within two hours of crews leaving a street. If your water runs brown, let the cold tap run for three minutes before using it for drinking or cooking. Brown water is sediment stirred up by the flushing and clears on its own; it is not a sign that the supply is unsafe. If it has not cleared after ten minutes, report it with your street name and the time you noticed it so a crew can check the nearest valve.</p>
+    <p>Billing questions go to the <a class="quiet" href="#billing">billing desk</a>, and outages can be reported through the <a class="quiet" href="#help">help line</a> at any hour; a <a class="quiet" href="#notices">notice archive</a> lists past work by ward.</p>
+    <!-- empty-heading -->
+    <h3></h3>
+    <p class="fine-print">Fine print: schedules may change at short notice because of weather, equipment faults or emergency repairs elsewhere in the network. The bulletin is updated by noon each day; the version on the ward office notice board takes precedence over any copy shared on social media. Compensation is not paid for planned work announced at least forty-eight hours in advance.</p>
+    <!-- huge-block: one paragraph of about 1,500 characters -->
+    <p>Background for new residents: the eastern wards are fed by two trunk mains that were laid at different times, and the older of the two still carries most of the supply during the morning peak. Over the years, iron and manganese settle inside the pipe as a thin layer of sediment, and when demand changes suddenly that layer can lift and travel with the water, which is why some homes see discoloured water after a burst or a repair. Flushing clears the layer in a controlled way: crews close valves to send a fast flow along one stretch at a time, open hydrants at the far end, and keep the water running until it comes out clear. The work is planned street by street so that each section is cleaned once and the dirty water is pushed out of the network rather than into homes. Because the fast flow needs pressure, supply to nearby streets drops while a section is being flushed, and this is the dip in pressure that residents notice in the mornings. Crews then sample the water at several points and only move on when the samples pass the same tests used for the daily quality report. The full programme takes about three weeks across all eastern wards and is repeated every two years, or sooner after major repairs. Residents can help by keeping drains clear of debris near hydrants, reporting leaks quickly, and avoiding heavy water use such as filling tanks or washing vehicles during the flushing hours listed for their street.</p>
+    <div class="clip"><p>Clipped notice: the full list of affected streets runs to several lines and continues here with Ashok Road, Bank Street, Canal View, Dairy Lane, Eastern Avenue, Fort Road, Garden Colony, Hill Street and more.</p></div>
+    <section class="overlap-demo" aria-label="Ward map note">
+      <p>Ward boundaries follow the old municipal map; check your ward number on your last bill before you call so the operator can find your street quickly.</p>
+      <div class="badge">Updated</div>
+    </section>
+    <div class="wide-strip">A timeline strip that is wider than the window, so the page scrolls sideways.</div>
+    <p><button type="button">Print this notice</button> <a href="#top">Back to top</a></p>
+  </main>
+  <div class="promo-bar">Pay your water bill online and save 2% — offer ends Friday</div>
+</body>
+</html>

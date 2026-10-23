@@ -3,6 +3,7 @@ import { registerOperation, type Operation } from "../shared/registry";
 import { AppearancePrefsSchema } from "../shared/settings";
 import type { AppearancePrefs } from "../shared/settings";
 import { APPEARANCE_PRESERVE_SELECTOR } from "./appearancePreserve";
+import { readabilityOperations, readabilityPlanSteps } from "./readabilityOps";
 import { createSmartPalette, type SmartPalette } from "./smartPalette";
 import { setStyleEntry } from "./styleEntry";
 
@@ -136,6 +137,7 @@ export const appearanceOperations: Operation<unknown>[] = [
   variableOperation("contrast", "Contrast", ContrastSchema, "contrast", 1) as Operation<unknown>,
   variableOperation("brightness", "Brightness", BrightnessSchema, "brightness", 1) as Operation<unknown>,
   variableOperation("saturation", "Saturation / grayscale", SaturationSchema, "saturation", 1) as Operation<unknown>,
+  ...readabilityOperations,
 ];
 
 export function registerAppearanceOps(): void {
@@ -154,6 +156,8 @@ export function appearancePlanSteps(
     { opId: "brightness", params: { value: prefs.brightness } },
     { opId: "saturation", params: { value: prefs.saturation } },
     { opId: "appearanceFilter", params: { theme, engine: prefs.engine, skip: skipTheme, contrast: prefs.contrast, brightness: prefs.brightness, saturation: prefs.saturation } },
+    // After the theme, so the contrast fix measures the colours the theme produced.
+    ...readabilityPlanSteps(prefs, theme, bodyReady),
   ];
 }
 

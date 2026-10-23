@@ -15,7 +15,7 @@ function freshId(): string {
   return `s${++_snapshotSeq}`;
 }
 
-function getOrAssignId(el: Element): string {
+export function getOrAssignId(el: Element): string {
   // Reuse an id only if this script assigned it to this element: a page could
   // copy data-awl-snap values onto other elements to make ids ambiguous.
   const existing = el.getAttribute("data-awl-snap");
@@ -84,7 +84,7 @@ function textPreview(el: Element, max = 80): string {
   return text.slice(0, max);
 }
 
-function protectionOf(el: Element): ProtectKind | undefined {
+export function protectionOf(el: Element): ProtectKind | undefined {
   const within = (selector: string) => el.matches(selector) || el.querySelector(selector) !== null;
   if (within(NAVIGATION)) return "navigation";
   if (within(FORMS)) return "form";

@@ -46,6 +46,8 @@ Pages:
 - http://localhost:4173/smart-header.html — brand-colour header, gradient hero, sticky bar that turns solid and a banner added late (try Smart Dark)
 - http://localhost:4173/long-article.html — jargon-heavy explainer (try **TL;DR** and **Show glossary** in the side panel)
 - http://localhost:4173/bilingual.html — prose with code, links and identifiers, plus an instruction aimed at AI (select a paragraph → ✨ Understand → Translate)
+- http://localhost:4173/a11y-issues.html — planted accessibility and readability problems (side panel → **Inspect this page**)
+- http://localhost:4173/a11y-clean.html — the same content with none of them (scores 100)
 - http://localhost:4173/clutter.html — article under a cookie banner, newsletter pop-up, promo bar and "Recommended" rail (try **Clean this page** in the side panel)
 
 ## AI setup (local, cloud, hybrid)

@@ -31,12 +31,13 @@ import { DEFAULT_TARGET, SOURCE_LANGUAGE, TRANSLATE_CHUNK_CHARS } from "../share
 import { GlossaryShownSchema, PageTextSchema, type UnderstandSelection } from "../shared/messages";
 import { formatProviderError, ProviderError, toProviderError } from "../shared/plan";
 import { ProviderRouter } from "../shared/providerRouter";
-import { cloudConsentFor, normalizeHostname, type Settings } from "../shared/settings";
+import { cloudConsentFor, type Settings } from "../shared/settings";
 import { loadSettings } from "../shared/storage";
 import { mask, stripCodeMarks, unmask } from "../shared/textMask";
 import { runComprehension } from "./comprehensionModel";
 import { consumeAllowOnce } from "./consent";
 import { beginJob, endJob, enqueue } from "./jobs";
+import { tabMessage, tabPage, tell } from "./tabs";
 import type { StructuredGenerator } from "./planner";
 
 /** Summaries of long pages read at most this many chunks, then merge them. */
@@ -67,24 +68,6 @@ export async function failOrphanedUnderstand(): Promise<void> {
     if (!key.startsWith("awl_understand_") || !parsed.success || !parsed.data.running) continue;
     const { kind } = parsed.data.running;
     await updateState(parsed.data.tabId, (state) => ({ ...state, running: undefined, error: { kind, code: "network", message: "The extension restarted while the AI was working.", hint: "Run it again." } }));
-  }
-}
-
-function tell(tabId: number, message: unknown): void {
-  chrome.tabs.sendMessage(tabId, message, () => void chrome.runtime.lastError);
-}
-
-function tabMessage<T>(tabId: number, message: unknown): Promise<T | null> {
-  return new Promise((resolve) => chrome.tabs.sendMessage(tabId, message, (response: T) => resolve(chrome.runtime.lastError ? null : response ?? null)));
-}
-
-async function tabPage(tabId: number): Promise<{ url: string; hostname: string } | null> {
-  try {
-    const tab = await chrome.tabs.get(tabId);
-    const url = new URL(tab.url ?? "");
-    return url.protocol === "http:" || url.protocol === "https:" ? { url: url.href, hostname: normalizeHostname(url.hostname) } : null;
-  } catch {
-    return null;
   }
 }
 

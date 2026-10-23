@@ -32,6 +32,10 @@ export const AppearancePrefsSchema = z.object({
   brightness: z.number().min(0.5).max(1.5).default(1),
   saturation: z.number().min(0).max(2).default(1),
   forceDark: z.boolean().default(false),
+  // P09: readability fixes the inspector can suggest (also usable on their own).
+  underlineLinks: z.boolean().default(false),
+  focusRing: z.boolean().default(false),
+  fixContrast: z.boolean().default(false),
 });
 export type AppearancePrefs = z.infer<typeof AppearancePrefsSchema>;
 
