@@ -4,6 +4,7 @@
 
 import { ProviderError } from "./plan";
 import { schemaForDialect, type JsonSchema } from "./jsonSchema";
+import type { CloudBackend } from "./settings";
 
 export interface ImageInput {
   mimeType: "image/png" | "image/jpeg" | "image/webp";
@@ -223,8 +224,8 @@ export class LocalOpenAICompatProvider implements LLMProvider {
   }
 }
 
-// ─── Cloud provider: the user's localhost proxy (Gemini or Claude) ──────────
-export type CloudBackend = "gemini" | "anthropic";
+// ─── Cloud provider: the user's localhost proxy (Gemini, Claude, OpenAI-compatible) ──
+export type { CloudBackend };
 
 export interface CloudProviderOptions {
   proxyUrl: string;
@@ -244,6 +245,9 @@ interface ProxyLine {
 }
 
 const CLOUD_MAX_OUTPUT_TOKENS = 4096;
+
+/** The server/.env setting each backend needs (named in errors; values never leave the proxy). */
+export const BACKEND_KEY: Record<CloudBackend, string> = { gemini: "GEMINI_API_KEY", anthropic: "ANTHROPIC_API_KEY", openai: "OPENAI_COMPAT_BASE_URL and OPENAI_COMPAT_API_KEY" };
 
 /** Maps a proxy error (HTTP status + code) to a typed provider error. */
 export function proxyError(status: number, code: string | undefined, message: string): ProviderError {
@@ -275,6 +279,8 @@ export class CloudProvider implements LLMProvider {
 
   private schemas(schema: JsonSchema): { schema: JsonSchema; schemaFallback?: JsonSchema } {
     if (this.opts.backend === "anthropic") return { schema: schemaForDialect(schema, "anthropic") };
+    // OpenAI-compatible servers differ; the proxy falls back to plain JSON mode if the schema is refused.
+    if (this.opts.backend === "openai") return { schema: schemaForDialect(schema, "llamacpp") };
     return { schema: schemaForDialect(schema, "gemini"), schemaFallback: schemaForDialect(schema, "gemini-openapi") };
   }
 
@@ -368,7 +374,7 @@ export class CloudProvider implements LLMProvider {
       const body = await response.json().catch(() => ({})) as { backends?: Record<string, boolean>; error?: { message?: string } };
       if (!response.ok) return { ok: false, error: body.error?.message ?? `HTTP ${response.status}` };
       if (body.backends && !body.backends[this.opts.backend]) {
-        return { ok: false, error: `The proxy has no ${this.opts.backend === "anthropic" ? "ANTHROPIC_API_KEY" : "GEMINI_API_KEY"} configured.` };
+        return { ok: false, error: `The proxy has no ${BACKEND_KEY[this.opts.backend]} configured.` };
       }
       return { ok: true, latencyMs: Date.now() - start, modelId: `${this.opts.backend}:${this.opts.modelId}` };
     } catch (error) {

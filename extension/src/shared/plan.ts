@@ -12,6 +12,8 @@ export const PlanSchema = z.object({
   interpretedRequest: z.string().max(512),
   changes: PlanChangesSchema,
   elements: ElementsSchema.optional(),
+  /** P10 drill-down: blocks the model wants to look inside before deciding. */
+  expand: z.array(z.string().min(1).max(32)).max(3).optional(),
   reasons: z.array(z.string().max(512)).max(20).default([]),
   confidence: z.number().min(0).max(1).default(0.5),
 });
@@ -33,6 +35,8 @@ export function parsePlan(raw: unknown): PlanParseResult {
       .filter(([, value]) => value !== null && value !== undefined)
       .map(([key, value]) => [key, normaliseValue(value)]));
   }
+  if (!Array.isArray(candidate.expand)) delete candidate.expand;
+  else candidate.expand = (candidate.expand as unknown[]).filter((id) => typeof id === "string").slice(0, 3);
   if (candidate.elements === null || typeof candidate.elements !== "object") delete candidate.elements;
   else candidate.elements = Object.fromEntries(Object.entries(candidate.elements as Record<string, unknown>)
     .filter(([, value]) => Array.isArray(value)));

@@ -44,6 +44,8 @@ const runner: Runner = {
   router: provider,
   signal: new AbortController().signal,
   translate: async () => { throw new Error("Sarvam is not part of this eval (see npm run smoke)."); },
+  // The cloud meaning check is scored by eval:supervisor.
+  reviewText: async () => null,
   source: () => target === "cloud" ? "cloud" : "local",
 };
 

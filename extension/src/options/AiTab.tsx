@@ -4,7 +4,7 @@ import type { ProviderStatus } from "../shared/messages";
 
 const MODES: Array<{ value: AiSettings["mode"]; title: string; detail: string }> = [
   { value: "local", title: "Local only", detail: "Only your llama-server is used. Page data never leaves this computer." },
-  { value: "hybrid", title: "Hybrid", detail: "Local first. If it fails, asks you before using the cloud." },
+  { value: "hybrid", title: "Hybrid (local + cloud review)", detail: "The local AI drafts every change, code measures it, and a cloud model reviews the draft (with your consent per site). If the local AI fails, asks before using the cloud." },
   { value: "cloud", title: "Cloud", detail: "Gemini or Claude through your local proxy, after you consent per site." },
 ];
 
@@ -86,18 +86,27 @@ export default function AiTab({ settings, update }: { settings: Settings; update
       {cloudUnused && <p className="settings-note">Not used in Local only mode. You can still configure and test it.</p>}
       <p className="settings-note">
         The proxy holds your API keys. Run it in a terminal from the project folder with <code>npm run proxy</code> (it listens on port {proxyPort}),
-        and put <code>PROXY_TOKEN</code> plus <code>GEMINI_API_KEY</code> and/or <code>ANTHROPIC_API_KEY</code> in <code>server/.env</code>.
+        and put <code>PROXY_TOKEN</code> plus <code>GEMINI_API_KEY</code> (and/or <code>ANTHROPIC_API_KEY</code>, or the <code>OPENAI_COMPAT_*</code> settings) in <code>server/.env</code>.
       </p>
       <div className="ai-grid">
         <Field label="Provider">
           <select value={ai.cloudBackend} onChange={(event) => change({ cloudBackend: event.target.value as AiSettings["cloudBackend"] })}>
             <option value="gemini">Google Gemini</option>
-            <option value="anthropic">Anthropic Claude</option>
+            <option value="anthropic">Anthropic Claude (paid API key)</option>
+            <option value="openai">OpenAI-compatible (set in server/.env)</option>
           </select>
         </Field>
-        {ai.cloudBackend === "gemini"
-          ? <Field label="Gemini model"><input value={ai.cloudModel} onChange={(event) => change({ cloudModel: event.target.value })} /></Field>
-          : <Field label="Claude model"><input value={ai.anthropicModel} onChange={(event) => change({ anthropicModel: event.target.value })} /></Field>}
+        {ai.cloudBackend === "gemini" && <Field label="Gemini model"><input value={ai.cloudModel} onChange={(event) => change({ cloudModel: event.target.value })} /></Field>}
+        {ai.cloudBackend === "gemini" && <Field label="Review model" hint="Checks the local AI's drafts (rare calls, so a stronger model). Falls back to the model above when busy."><input value={ai.reviewModel} onChange={(event) => change({ reviewModel: event.target.value })} /></Field>}
+        {ai.cloudBackend === "anthropic" && <Field label="Claude model"><input value={ai.anthropicModel} onChange={(event) => change({ anthropicModel: event.target.value })} /></Field>}
+        {ai.cloudBackend === "openai" && <Field label="Model" hint="Leave as gpt-compatible to use OPENAI_COMPAT_MODEL from server/.env."><input value={ai.openaiModel} onChange={(event) => change({ openaiModel: event.target.value })} /></Field>}
+        <Field label="Cloud review" hint="In hybrid mode the local AI drafts every change and code measures it; the cloud model then reviews the draft.">
+          <select value={ai.reviewPolicy} onChange={(event) => change({ reviewPolicy: event.target.value as AiSettings["reviewPolicy"] })}>
+            <option value="always">Review every draft</option>
+            <option value="first-per-site">Only the first run on each site</option>
+            <option value="when-unsure">Only when the local draft looks unsure</option>
+          </select>
+        </Field>
         <Field label="Proxy URL"><input value={ai.cloudProxyUrl} onChange={(event) => change({ cloudProxyUrl: event.target.value })} /></Field>
         <Field label="Proxy token" hint="Same value as PROXY_TOKEN in server/.env. It unlocks only your local proxy."><input type="password" autoComplete="off" value={ai.cloudProxyToken} onChange={(event) => change({ cloudProxyToken: event.target.value })} /></Field>
       </div>

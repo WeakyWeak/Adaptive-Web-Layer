@@ -2,8 +2,8 @@
 // Snapshot blocks and ids → selectors on a real (jsdom) DOM. jsdom has no
 // layout, so element boxes are stubbed per element.
 
-import { beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { buildDomSnapshot, resolveSnapshotId, sameKindSelector } from "../content/domSnapshot";
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { blockAtRegion, buildDomSnapshot, expandBlocks, resolveSnapshotId, sameKindSelector, viewportMarks } from "../content/domSnapshot";
 import { persistentSelector } from "../content/elementPicker";
 import { clearPreviewMarks, previewSelectors } from "../content/previewMarks";
 import { DomSnapshotSchema } from "../shared/plan";
@@ -54,7 +54,8 @@ describe("snapshot blocks", () => {
     expect(DomSnapshotSchema.safeParse(snapshot).success).toBe(true);
     expect(blockFor(snapshot, "header")).toMatchObject({ protect: "navigation", main: false });
     expect(blockFor(snapshot, "main")).toMatchObject({ main: true, role: "main" });
-    expect(blockFor(snapshot, ".layout")).toBeUndefined(); // not a candidate: no landmark, hint or overlay
+    // P10: every visible part of the page is a candidate, even without a landmark, hint or overlay.
+    expect(blockFor(snapshot, ".layout")).toMatchObject({ main: true, children: 3 });
     expect(blockFor(snapshot, ".promo-bar")).toMatchObject({ fixed: true, hints: "promo-bar" });
     expect(blockFor(snapshot, "#cookie-banner")).toMatchObject({ fixed: true, protect: "dialog", role: "dialog" });
     expect(blockFor(snapshot, ".newsletter-overlay")).toMatchObject({ protect: "form" });
@@ -151,5 +152,66 @@ describe("every copy of a clutter widget", () => {
     expect(sameKindSelector(document.querySelector(".ad-slot")!)).toBeNull();
     document.body.innerHTML = Array(41).fill(`<div class="ad-slot">x</div>`).join("");
     expect(sameKindSelector(document.querySelector(".ad-slot")!)).toBeNull();
+  });
+});
+
+describe("P10 open page model", () => {
+  // Clutter with meaningless class names, no roles and no position: fixed.
+  const OBFUSCATED = `<div class="x9a3f"><p>We value your privacy. We and our partners use cookies.</p><button>Accept all</button></div>
+    <div class="mm42">FLASH SALE: 60% off today only</div>
+    <div class="lay-0x"><div class="c1z"><strong>On this page</strong><a href="#a">What changes</a></div>
+      <main><h1>Hours</h1><p>${"The library opens at 9:30. ".repeat(20)}</p><div class="k2v">Get the weekly digest</div></main>
+      <div class="r8t"><h2>You may also like</h2><a href="#">One</a><a href="#">Two</a><iframe src="https://ads.example-adnet.test/slot"></iframe></div></div>`;
+  const BOXES: Record<string, [number, number, number, number]> = {
+    ".x9a3f": [0, 0, 1024, 60], ".mm42": [0, 60, 1024, 40], ".lay-0x": [0, 100, 1024, 1800], ".c1z": [0, 100, 200, 200],
+    main: [220, 100, 560, 1800], ".k2v": [220, 600, 560, 120], ".r8t": [800, 100, 224, 900], iframe: [800, 700, 224, 250],
+    ".x9a3f p": [0, 0, 800, 40], ".r8t a": [800, 150, 224, 30], ".c1z a": [0, 140, 200, 20],
+  };
+  let saved: typeof Element.prototype.getBoundingClientRect;
+  beforeEach(() => {
+    saved = Element.prototype.getBoundingClientRect;
+    Element.prototype.getBoundingClientRect = function (this: Element) {
+      const match = Object.entries(BOXES).find(([selector]) => this.matches(selector));
+      const [x, y, width, height] = match?.[1] ?? [0, 0, 10, 10];
+      return { x, y, left: x, top: y, width, height, right: x + width, bottom: y + height, toJSON: () => ({}) } as DOMRect;
+    };
+    document.body.innerHTML = OBFUSCATED;
+  });
+  afterEach(() => { Element.prototype.getBoundingClientRect = saved; });
+
+  it("offers every visible part of the page, whatever its class names", () => {
+    const snapshot = buildDomSnapshot(false);
+    expect(blockFor(snapshot, ".x9a3f")).toMatchObject({ hints: "x9a3f", text: expect.stringContaining("We value your privacy"), main: false });
+    expect(blockFor(snapshot, ".mm42")).toBeTruthy();
+    expect(blockFor(snapshot, ".c1z")).toBeTruthy();
+    expect(blockFor(snapshot, ".k2v")).toMatchObject({ inMain: true });
+    expect(blockFor(snapshot, ".r8t")).toMatchObject({ ad: true });
+    expect(blockFor(snapshot, ".lay-0x")).toMatchObject({ main: true, children: 3 });
+  });
+
+  it("opens a block's parts on request (drill-down), bounded", () => {
+    const snapshot = buildDomSnapshot(false);
+    const rail = blockFor(snapshot, ".r8t")!;
+    const parts = expandBlocks([rail.id], false);
+    expect(parts.length).toBeGreaterThan(0);
+    expect(parts.length).toBeLessThanOrEqual(12);
+    expect(parts.every((part) => part.within === rail.id)).toBe(true);
+    expect(expandBlocks(["s-unknown"], false)).toEqual([]);
+  });
+
+  it("maps a screenshot region to the smallest block that covers it", () => {
+    document.elementsFromPoint = () => [document.querySelector(".x9a3f p")!, document.querySelector(".x9a3f")!, document.body];
+    Object.assign(window, { innerWidth: 1024, innerHeight: 768 });
+    // The consent banner: top 0–60px of a 768px-high viewport.
+    const found = blockAtRegion({ x: 0, y: 0, w: 100, h: 8 }, false);
+    expect(found && resolveSnapshotId(found.id)).toBe(document.querySelector(".x9a3f"));
+    expect(blockAtRegion({ x: 0, y: 0, w: 0.1, h: 0.1 }, false)).toBeNull();
+  });
+
+  it("reports where blocks are in the viewport for numbered boxes", () => {
+    const snapshot = buildDomSnapshot(false);
+    const banner = blockFor(snapshot, ".x9a3f")!;
+    const { marks } = viewportMarks([banner.id, "s-gone"]);
+    expect(marks).toEqual([{ id: banner.id, x: 0, y: 0, w: 1024, h: 60 }]);
   });
 });

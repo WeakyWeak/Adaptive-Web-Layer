@@ -9,7 +9,7 @@ import { detectExistingDark, shouldSkipDarkTheme } from "./darkDetection";
 import { injectBundledFonts } from "./fontInjector";
 import { registerFocusOps } from "./focusOps";
 import { ElementPicker, focusCandidates, persistentSelector } from "./elementPicker";
-import { buildDomSnapshot, resolveSnapshotId, sameKindSelector } from "./domSnapshot";
+import { blockAtRegion, buildDomSnapshot, expandBlocks, resolveSnapshotId, sameKindSelector, viewportMarks } from "./domSnapshot";
 import { ElementOutline } from "./elementOutline";
 import { clearPreviewMarks, previewSelectors } from "./previewMarks";
 import { extractPageText } from "./pageText";
@@ -23,6 +23,7 @@ import type { PreviewElements } from "../shared/elementPlan";
 import { currentAiValues, resetSiteRule, savedSiteSelectors, withSiteElements, withSitePatch } from "../shared/sitePatch";
 import { getContentRegionSelector } from "./domUtils";
 import { inspectPage } from "./inspector";
+import { measurePage } from "./measure";
 
 // Detect restricted pages (chrome://, chrome-extension://, Web Store, etc.)
 function isRestrictedPage(): boolean {
@@ -315,6 +316,52 @@ if (isRestrictedPage()) {
         sendResponse({ type: "INSPECT_RESULT", report });
       })().catch((error) => sendResponse({ type: "ACK", ok: false, error: String(error) }));
       return true;
+    }
+
+    // ── P10: supervised fix ─────────────────────────────────────────────────
+    if (msg.type === "MEASURE_PAGE") {
+      void (async () => {
+        // Measure exactly what the page shows: saved settings plus the current preview.
+        const settings = currentSettings ?? await loadSettings();
+        await new Promise((resolve) => setTimeout(resolve, 60));
+        const effective = previewChanges ? withSitePatch(settings, hostname, previewChanges) : settings;
+        const appearance = resolveAppearance(effective, hostname);
+        const region = document.querySelector(getContentRegionSelector(settings.global.applyToWholePage)) ?? document.body;
+        const hidden = previewElements ? previewSelectors(previewElements).hide.flatMap((selector) => {
+          try { return Array.from(document.querySelectorAll(selector)); } catch { return []; }
+        }) : [];
+        const result = await measurePage(document, {
+          region,
+          current: currentAiValues(effective, hostname),
+          smartColours: appearance.engine === "smart" && appearance.theme !== "sepia",
+          hidden,
+        });
+        sendResponse({ type: "MEASURE_RESULT", ...result });
+      })().catch((error) => sendResponse({ type: "ACK", ok: false, error: String(error) }));
+      return true;
+    }
+
+    if (msg.type === "EXPAND_BLOCKS") {
+      try {
+        sendResponse({ type: "BLOCKS", blocks: expandBlocks(msg.ids, currentSettings?.global.applyToWholePage ?? false).slice(0, 40) });
+      } catch (error) {
+        sendResponse({ type: "ACK", ok: false, error: String(error) });
+      }
+      return false;
+    }
+
+    if (msg.type === "BLOCKS_AT_REGIONS") {
+      try {
+        sendResponse({ type: "REGION_BLOCKS", blocks: msg.regions.map((region) => blockAtRegion(region, currentSettings?.global.applyToWholePage ?? false)) });
+      } catch (error) {
+        sendResponse({ type: "ACK", ok: false, error: String(error) });
+      }
+      return false;
+    }
+
+    if (msg.type === "GET_MARKS") {
+      sendResponse({ type: "MARKS", ...viewportMarks(msg.ids) });
+      return false;
     }
 
     // ── P07: element plans ──────────────────────────────────────────────────

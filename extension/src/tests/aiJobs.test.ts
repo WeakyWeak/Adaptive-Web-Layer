@@ -10,7 +10,7 @@ import { defaultSettings, resolveFocus, resolveTypography, type Settings } from 
 import { loadSettings, saveSettings } from "../shared/storage";
 
 const TAB = 7;
-const block = (id: string, extra: Partial<SnapshotBlock>): SnapshotBlock => ({ id, tag: "div", hints: "", text: "", box: [0, 0, 100, 10], fixed: false, area: 3, linkDensity: 0, main: false, ...extra });
+const block = (id: string, extra: Partial<SnapshotBlock>): SnapshotBlock => ({ id, tag: "div", hints: "", text: "", box: [0, 0, 100, 10], fixed: false, area: 3, linkDensity: 0, main: false, inMain: false, children: 0, ad: false, ...extra });
 const snapshot = {
   url: "https://example.com/a", title: "A", contentRegion: "main", headings: [], landmarks: [],
   textBlocks: [], imageCnt: 0, tableCnt: 0, codeBlockCnt: 1, tokenEstimate: 10,

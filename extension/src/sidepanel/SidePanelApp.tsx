@@ -8,10 +8,10 @@ import "./sidepanel.css";
 
 function describeMode(settings: Settings): string {
   if (settings.ai.demoMode) return "Demo mode";
-  const cloud = settings.ai.cloudBackend === "anthropic" ? "Claude" : "Gemini";
+  const cloud = { gemini: "Gemini", anthropic: "Claude", openai: "OpenAI-compatible" }[settings.ai.cloudBackend];
   if (settings.ai.mode === "local") return "Local only";
   if (settings.ai.mode === "cloud") return `Cloud (${cloud})`;
-  return `Hybrid (local → ${cloud})`;
+  return `Hybrid (local + ${cloud} review)`;
 }
 
 function StatusChip({ status }: { status: ProviderStatus | null }): React.ReactElement {

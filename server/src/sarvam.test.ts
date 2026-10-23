@@ -8,7 +8,7 @@ import { parseTranslateRequest, translateWithSarvam } from "./providers/sarvam.t
 import { UpstreamError } from "./providers/types.ts";
 
 const reply = (status: number, body: unknown) => (async () => new Response(JSON.stringify(body), { status })) as unknown as typeof fetch;
-const config = (sarvamApiKey: string): Config => ({ geminiApiKey: "", anthropicApiKey: "", anthropicEffort: "low", sarvamApiKey, proxyToken: "t", port: 0, allowedOrigins: [] });
+const config = (sarvamApiKey: string): Config => ({ geminiApiKey: "", anthropicApiKey: "", anthropicEffort: "low", sarvamApiKey, openaiCompat: { baseUrl: "", apiKey: "", model: "" }, proxyToken: "t", port: 0, allowedOrigins: [] });
 
 function fakeResponse(): ServerResponse & { status?: number; body?: unknown } {
   const res = {

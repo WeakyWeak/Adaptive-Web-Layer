@@ -8,6 +8,7 @@ import {
   resolveAppearance,
   isSiteEnabled,
   migrateSettings,
+  cloudTextAllowed,
   SETTINGS_VERSION,
 } from "../shared/settings";
 
@@ -295,6 +296,17 @@ describe("migrateSettings", () => {
     const migrated = migrateSettings({ fontSize: 999 }); // top-level wrong field
     // Zod ignores unknown fields in partial mode, so fontSize at top level is fine
     expect(migrated.global.typography.fontSize).toBe(16); // default
+  });
+
+  it("adds the P10 review settings and keeps page text off for the reviewer", () => {
+    const migrated = migrateSettings({ version: 9, ai: { mode: "hybrid", cloudBackend: "gemini" }, privacy: { cloudSiteConsents: { "example.com": "allow" } } });
+    expect(migrated.version).toBe(10);
+    expect(migrated.ai).toMatchObject({ mode: "hybrid", reviewPolicy: "always", reviewModel: "gemini-3.5-flash" });
+    expect(migrated.privacy.cloudTextSites).toEqual({});
+    expect(cloudTextAllowed(migrated.privacy, "example.com")).toBe(false);
+    expect(cloudTextAllowed({ ...migrated.privacy, cloudTextSites: { "example.com": true } }, "example.com")).toBe(true);
+    // Text consent never applies without cloud consent.
+    expect(cloudTextAllowed({ ...migrated.privacy, cloudSiteConsents: {}, cloudTextSites: { "example.com": true } }, "example.com")).toBe(false);
   });
 
   it("adds the P03 built-in appearance presets to older stored profiles", () => {

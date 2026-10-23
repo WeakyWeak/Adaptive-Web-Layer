@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from "react";
 import type { AiJob } from "../../shared/aiJob";
-import { CLEAN_PAGE_REQUEST } from "../../shared/elementPlan";
+import { CLEAN_PAGE_REQUEST, FIX_PAGE_REQUEST } from "../../shared/elementPlan";
 import type { Settings } from "../../shared/settings";
 import ConsentCard from "../ConsentCard";
 import { command, useAiJob, type ActiveTab } from "../hooks";
 import ElementList from "./ElementList";
 import SavedRules from "./SavedRules";
+import SupervisionView from "./SupervisionView";
 
 const SOURCE_LABEL: Record<NonNullable<AiJob["source"]>, string> = {
   local: "Local AI",
@@ -48,6 +49,7 @@ function JobResult({ job, settings, onRerun, onError }: {
   if (job.status === "running") {
     return (
       <div className="card" aria-live="polite">
+        {job.supervision && <SupervisionView job={job} settings={settings} onError={onError} />}
         <div className="stage"><span className="spinner" aria-hidden="true" />{job.stage}{job.received > 0 ? ` · ${job.received} chars` : ""}</div>
         <button onClick={() => void act("AI_CANCEL")}>Cancel</button>
       </div>
@@ -79,7 +81,8 @@ function JobResult({ job, settings, onRerun, onError }: {
         <strong>{job.interpretedRequest ?? "Done"}</strong>
         {job.source !== "rules" && <p className="muted">No setting needed to change.</p>}
         {job.reasons?.map((reason) => <p key={reason} className="muted">{reason}</p>)}
-        <ElementList job={job} onError={onError} />
+        {job.warnings?.map((warning) => <p key={warning} className="warning">{warning}</p>)}
+        {job.supervision ? <SupervisionView job={job} settings={settings} onError={onError} /> : <ElementList job={job} onError={onError} />}
       </div>
     );
   }
@@ -94,8 +97,23 @@ function JobResult({ job, settings, onRerun, onError }: {
         {job.confidence !== undefined && <span className="muted">confidence {Math.round(job.confidence * 100)}%</span>}
       </div>
       <strong>{job.interpretedRequest}</strong>
-      {(job.descriptions?.length ?? 0) > 0 && <ChangeList items={job.descriptions ?? []} />}
-      <ElementList job={job} onError={onError} />
+      {job.supervision ? (
+        <>
+          <SupervisionView job={job} settings={settings} onError={onError} />
+          {(job.rejectedElements?.length ?? 0) > 0 && (
+            <details>
+              <summary>Not applied ({job.rejectedElements!.length})</summary>
+              <ul className="changes">{job.rejectedElements!.map((item) => <li key={`${item.action}-${item.id}`}>{item.label}: {item.reason}</li>)}</ul>
+            </details>
+          )}
+          {job.unsaved && job.unsaved.length > 0 && <p className="warning">Could not save {job.unsaved.length} item(s) for later visits: {job.unsaved.join(", ")}.</p>}
+        </>
+      ) : (
+        <>
+          {(job.descriptions?.length ?? 0) > 0 && <ChangeList items={job.descriptions ?? []} />}
+          <ElementList job={job} onError={onError} />
+        </>
+      )}
       {job.reasons && job.reasons.length > 0 && (
         <details><summary>Why</summary>{job.reasons.map((reason) => <p key={reason} className="muted">{reason}</p>)}</details>
       )}
@@ -104,7 +122,8 @@ function JobResult({ job, settings, onRerun, onError }: {
         <>
           <p className="muted">Previewing on the page. Nothing is saved yet.</p>
           <div className="row">
-            <button className="primary" onClick={() => void act("AI_APPLY")}>Apply to {job.hostname}</button>
+            <button className="primary" disabled={job.supervision?.review === "running"} onClick={() => void act("AI_APPLY")}>Apply to {job.hostname}</button>
+            {job.supervision?.review === "running" && <button onClick={() => void act("AI_CANCEL")}>Stop the review</button>}
             <button onClick={() => void act("AI_DISCARD")}>Discard</button>
           </div>
         </>
@@ -125,9 +144,9 @@ export default function AiPanel({ tab, settings }: { tab: ActiveTab | null; sett
   const [error, setError] = useState<string | null>(null);
   useEffect(() => setError(null), [tab?.id]);
 
-  const run = async (request: string) => {
+  const run = async (request: string, kind: "ask" | "clean" | "fix" = "ask") => {
     if (!tab || !request.trim()) return;
-    setError(await command({ type: "AI_RUN", tabId: tab.id, request: request.trim() }));
+    setError(await command({ type: "AI_RUN", tabId: tab.id, request: request.trim(), kind }));
   };
   const usable = Boolean(tab?.hostname) && /^https?:/.test(tab?.url ?? "");
 
@@ -145,14 +164,17 @@ export default function AiPanel({ tab, settings }: { tab: ActiveTab | null; sett
         <button className="primary" type="submit" disabled={!usable || !input.trim() || job?.status === "running"}>Go</button>
       </form>
       <div className="row">
-        <button onClick={() => void run(CLEAN_PAGE_REQUEST)} disabled={!usable || job?.status === "running"} title="Hide cookie banners, pop-ups, promos and recommendation rails; keep the main content and navigation">
+        <button onClick={() => void run(FIX_PAGE_REQUEST, "fix")} disabled={!usable || job?.status === "running"} title="The local AI drafts readability fixes, code measures them, and in hybrid mode a cloud model reviews them">
+          Fix this page
+        </button>
+        <button onClick={() => void run(CLEAN_PAGE_REQUEST, "clean")} disabled={!usable || job?.status === "running"} title="Hide cookie banners, pop-ups, promos and recommendation rails; keep the main content and navigation">
           Clean this page
         </button>
       </div>
       <SavedRules tab={tab} settings={settings} />
       {!usable && <p className="muted">Open a regular web page to use AI commands.</p>}
       {error && <p className="error-text" role="alert">{error}</p>}
-      {job && <JobResult job={job} settings={settings} onRerun={() => void run(job.request)} onError={setError} />}
+      {job && <JobResult job={job} settings={settings} onRerun={() => void run(job.request, job.kind)} onError={setError} />}
     </div>
   );
 }

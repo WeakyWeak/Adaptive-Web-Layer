@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { FONT_FAMILY_OPTIONS } from "./settings";
 import { DomSnapshotSchema } from "./plan";
-import { PreviewElementsSchema } from "./elementPlan";
+import { PreviewElementsSchema, SnapshotBlockSchema } from "./elementPlan";
 import { GlossaryTermSchema, MAX_SELECTION_CHARS, PAGE_KINDS, SELECTION_KINDS, SelectionResultSchema, SummaryResultSchema } from "./comprehension";
 import { TARGET_CODES } from "./languages";
 import { InspectReportSchema } from "./inspector";
@@ -94,9 +94,12 @@ export const DomSnapshotResponseSchema = z.object({
 // Results are not returned in the reply: the background writes the job record
 // to chrome.storage.session and the side panel renders whatever is stored.
 const TabIdSchema = z.number().int().nonnegative();
-export const AiRunSchema = z.object({ type: z.literal("AI_RUN"), tabId: TabIdSchema, request: z.string().trim().min(1).max(1000) });
+/** ask: a typed request · clean: "Clean this page" · fix: "Fix this page" (P10: also sees the measured problems). */
+export const AI_RUN_KINDS = ["ask", "clean", "fix"] as const;
+export const AiRunSchema = z.object({ type: z.literal("AI_RUN"), tabId: TabIdSchema, request: z.string().trim().min(1).max(1000), kind: z.enum(AI_RUN_KINDS).default("ask") });
 export const AiJobActionSchema = z.object({
-  type: z.enum(["AI_CANCEL", "AI_APPLY", "AI_DISCARD", "AI_UNDO", "AI_USE_FALLBACK"]),
+  /** AI_REVIEW (P10): ask the cloud to review the current preview (after consent, or after a failed review). */
+  type: z.enum(["AI_CANCEL", "AI_APPLY", "AI_DISCARD", "AI_UNDO", "AI_USE_FALLBACK", "AI_REVIEW"]),
   tabId: TabIdSchema,
 });
 export const AiSaveProfileSchema = z.object({ type: z.literal("AI_SAVE_PROFILE"), tabId: TabIdSchema, name: z.string().trim().min(1).max(64) });
@@ -146,6 +149,8 @@ export const SetCloudConsentSchema = z.object({
   type: z.literal("SET_CLOUD_CONSENT"),
   hostname: z.string().min(1).max(253),
   decision: z.enum(["allow-once", "allow-site", "deny"]),
+  /** P10: also let the cloud reviewer read page text on this site (to check simplified text). */
+  text: z.boolean().optional(),
 });
 
 // ── Generic ack ───────────────────────────────────────────────────────────────
@@ -193,6 +198,31 @@ export const InspectApplySchema = z.object({ type: z.literal("INSPECT_APPLY"), t
 // Background → content: measure the page.
 export const InspectPageSchema = z.object({ type: z.literal("INSPECT_PAGE") });
 export const InspectResultSchema = z.object({ type: z.literal("INSPECT_RESULT"), report: InspectReportSchema });
+
+// ── P10: supervised fix (background → content) ─────────────────────────────
+/** Drill-down: the visible parts of these blocks become candidate blocks. */
+export const ExpandBlocksSchema = z.object({ type: z.literal("EXPAND_BLOCKS"), ids: z.array(z.string().min(1).max(32)).max(3) });
+export const BlocksSchema = z.object({ type: z.literal("BLOCKS"), blocks: z.array(SnapshotBlockSchema).max(40) });
+/** Areas of the screenshot (in % of the viewport) the reviewer says were missed → the block at each (or null). */
+export const BlocksAtRegionsSchema = z.object({ type: z.literal("BLOCKS_AT_REGIONS"), regions: z.array(z.object({ x: z.number(), y: z.number(), w: z.number(), h: z.number() })).max(3) });
+export const RegionBlocksSchema = z.object({ type: z.literal("REGION_BLOCKS"), blocks: z.array(SnapshotBlockSchema.nullable()).max(3) });
+/** Where these blocks are in the viewport, for numbered boxes on a screenshot. */
+export const GetMarksSchema = z.object({ type: z.literal("GET_MARKS"), ids: z.array(z.string().min(1).max(32)).max(60) });
+export const MarksSchema = z.object({
+  type: z.literal("MARKS"),
+  marks: z.array(z.object({ id: z.string(), x: z.number(), y: z.number(), w: z.number(), h: z.number() })).max(60),
+  width: z.number(),
+  height: z.number(),
+});
+/** Measure the page as shown now (saved settings + preview): findings, main text, protected elements. */
+export const MeasurePageSchema = z.object({ type: z.literal("MEASURE_PAGE") });
+export const MeasureResultSchema = z.object({
+  type: z.literal("MEASURE_RESULT"),
+  report: InspectReportSchema,
+  mainText: z.number().min(0),
+  hiddenText: z.number().min(0),
+  protectedVisible: z.number().min(0),
+});
 
 export const AckSchema = z.object({
   type: z.literal("ACK"),
@@ -252,6 +282,15 @@ export const AnyMessageSchema = z.discriminatedUnion("type", [
   InspectApplySchema,
   InspectPageSchema,
   InspectResultSchema,
+  // P10
+  ExpandBlocksSchema,
+  BlocksSchema,
+  BlocksAtRegionsSchema,
+  RegionBlocksSchema,
+  GetMarksSchema,
+  MarksSchema,
+  MeasurePageSchema,
+  MeasureResultSchema,
   AckSchema,
 ]);
 export type AnyMessage = z.infer<typeof AnyMessageSchema>;

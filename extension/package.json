@@ -12,7 +12,8 @@
     "lint": "npx eslint src --ext .ts,.tsx",
     "e2e": "npx playwright test",
     "eval:planner": "npx vite-node scripts/evalPlanner.ts --",
-    "eval:comprehension": "npx vite-node scripts/evalComprehension.ts --"
+    "eval:comprehension": "npx vite-node scripts/evalComprehension.ts --",
+    "eval:supervisor": "npx vite-node scripts/evalSupervisor.ts --"
   },
   "dependencies": {
     "react": "^18.3.1",

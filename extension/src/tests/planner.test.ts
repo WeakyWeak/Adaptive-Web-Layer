@@ -184,3 +184,42 @@ describe("dropUnrequestedColour", () => {
     expect(dropUnrequestedColour("easier on my eyes at night", { theme: "dark" }).changes).toEqual({ theme: "dark" });
   });
 });
+
+describe("drill-down (P10)", () => {
+  const withParts: DomSnapshot = { ...snapshot, blocks: [
+    { id: "s1", tag: "div", hints: "r8t", text: "You may also like", box: [70, 10, 25, 80], fixed: false, area: 15, linkDensity: 0.8, main: false, inMain: false, children: 4, ad: false },
+    { id: "s2", tag: "main", hints: "", text: "Article", box: [20, 10, 50, 200], fixed: false, area: 45, linkDensity: 0, main: true, inMain: false, children: 0, ad: false },
+  ] };
+  const part = { id: "s9", tag: "iframe", hints: "", text: "", box: [70, 60, 25, 20] as [number, number, number, number], fixed: false, area: 2, linkDensity: 0, main: false, inMain: false, children: 0, ad: true, within: "s1" };
+
+  it("lets the model look inside a block, then plans with its parts", async () => {
+    const generator = scripted(
+      { ...goodPlan, changes: {}, elements: { hide: [], dim: [], highlight: [] }, expand: ["s1"] },
+      { ...goodPlan, changes: {}, elements: { hide: ["s9"], dim: [], highlight: [] }, expand: [] },
+    );
+    const asked: string[][] = [];
+    const result = await runPlanner(generator, { request: "hide the ads", snapshot: withParts, current, expand: async (ids) => { asked.push(ids); return [part]; } });
+    expect(asked).toEqual([["s1"]]);
+    expect(result.expanded).toEqual(["s1"]);
+    expect(result.elements.items.map((item) => item.id)).toEqual(["s9"]);
+    expect(generator.requests[1].userPrompt).toContain("s9 <iframe>");
+    // Only blocks with parts are offered, never the main content.
+    expect((generator.requests[0].schema as { properties: { expand: { items: { enum: string[] } } } }).properties.expand.items.enum).toEqual(["s1"]);
+  });
+
+  it("stops drilling down after the round budget", async () => {
+    const parts = [part, { ...part, id: "s10" }, { ...part, id: "s11" }];
+    const generator = scripted(...Array.from({ length: 5 }, () => ({ ...goodPlan, elements: { hide: [], dim: [], highlight: [] }, expand: ["s1", "s9", "s10"] })));
+    let calls = 0;
+    const withMore = { ...withParts, blocks: [...withParts.blocks] };
+    const result = await runPlanner(generator, { request: "hide the clutter", snapshot: withMore, current, expand: async () => [{ ...parts[calls++ % 3], children: 3 }] });
+    expect(generator.requests.length).toBeLessThanOrEqual(3);
+    expect(result.plan).toBeTruthy();
+  });
+
+  it("offers no drill-down for requests that are not about page parts", async () => {
+    const generator = scripted({ ...goodPlan, elements: { hide: [], dim: [], highlight: [] } });
+    await runPlanner(generator, { request: "make the text larger", snapshot: withParts, current, expand: async () => [part] });
+    expect((generator.requests[0].schema as { properties: Record<string, unknown> }).properties.expand).toBeUndefined();
+  });
+});

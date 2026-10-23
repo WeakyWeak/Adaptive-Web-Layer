@@ -1,4 +1,4 @@
-export type Backend = "gemini" | "anthropic";
+export type Backend = "gemini" | "anthropic" | "openai";
 
 export interface ImageInput { mimeType: string; data: string }
 

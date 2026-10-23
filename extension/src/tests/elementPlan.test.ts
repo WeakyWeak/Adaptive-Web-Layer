@@ -17,7 +17,7 @@ import { defaultSettings } from "../shared/settings";
 import { currentAiValues } from "../shared/sitePatch";
 
 const block = (id: string, extra: Partial<SnapshotBlock> = {}): SnapshotBlock => ({
-  id, tag: "div", hints: "", text: "", box: [0, 0, 100, 10], fixed: false, area: 2, linkDensity: 0, main: false, ...extra,
+  id, tag: "div", hints: "", text: "", box: [0, 0, 100, 10], fixed: false, area: 2, linkDensity: 0, main: false, inMain: false, children: 0, ad: false, ...extra,
 });
 
 // Mirrors fixtures/clutter.html.

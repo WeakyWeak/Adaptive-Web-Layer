@@ -60,12 +60,19 @@ function elementsJsonSchema(blockIds: readonly string[]): JsonSchema {
  * It is required (lists may be empty): llama.cpp's grammar emits optional
  * properties after all required ones, where a model never reaches them.
  */
-export function planJsonSchema(blockIds: readonly string[] = []): JsonSchema {
+export function planJsonSchema(blockIds: readonly string[] = [], expandable: readonly string[] = []): JsonSchema {
   const withElements = blockIds.length > 0;
+  const withExpand = expandable.length > 0;
   return {
     type: "object",
     additionalProperties: false,
-    required: withElements ? ["interpretedRequest", "changes", "elements", "reasons", "confidence"] : ["interpretedRequest", "changes", "reasons", "confidence"],
+    required: [
+      "interpretedRequest", "changes",
+      ...(withElements ? ["elements"] : []),
+      // P10 drill-down, offered only when some block has parts to open.
+      ...(withExpand ? ["expand"] : []),
+      "reasons", "confidence",
+    ],
     properties: {
       interpretedRequest: { type: "string", maxLength: 200, description: "What you understood the user to want" },
       changes: {
@@ -75,6 +82,7 @@ export function planJsonSchema(blockIds: readonly string[] = []): JsonSchema {
         description: "Only the settings that should change; omit everything else",
       },
       ...(withElements ? { elements: elementsJsonSchema(blockIds) } : {}),
+      ...(withExpand ? { expand: { type: "array", maxItems: 3, items: { type: "string", enum: [...expandable] }, description: "Blocks to look inside before deciding; usually empty" } } : {}),
       reasons: { type: "array", maxItems: 8, items: { type: "string", maxLength: 200 } },
       confidence: { type: "number", minimum: 0, maximum: 1 },
     },

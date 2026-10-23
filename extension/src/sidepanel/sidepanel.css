@@ -142,3 +142,34 @@ button.link { padding: 0 6px; font-size: 12px; }
 .chip.conf-medium { background: #334155; color: #cbd5e1; }
 .chip.conf-low { background: var(--surface); color: var(--muted); border: 1px dashed var(--border); }
 .interpretation { border-style: dashed; }
+
+/* P10: supervised fix */
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.supervision { display: flex; flex-direction: column; gap: 6px; }
+.stepper { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+.step { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted); padding: 4px 6px; border-radius: 6px; border: 1px solid var(--border); min-width: 0; }
+.step-dot { display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--border); font-size: 10px; flex: none; }
+.step-done { color: var(--text); }
+.step-done .step-dot { background: var(--ok); border-color: var(--ok); color: #bbf7d0; }
+.step-running { color: var(--text); border-color: var(--accent); }
+.step-running .step-dot { border-color: var(--accent); border-top-color: transparent; animation: spin 0.8s linear infinite; }
+.step-failed .step-dot { background: var(--bad); border-color: var(--bad); color: #fecaca; }
+.step-skipped { opacity: 0.7; }
+.score-path { margin: 0; display: flex; gap: 4px; flex-wrap: wrap; align-items: baseline; }
+.review-note { margin: 0; padding: 6px 8px; border-left: 3px solid var(--accent); font-size: 13px; }
+.ledger { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.ledger-entry { padding: 5px 6px; border-radius: 6px; border: 1px solid transparent; }
+.ledger-entry:hover, .ledger-entry:focus-within { border-color: var(--accent); background: var(--surface); }
+.ledger-entry label { display: flex; gap: 6px; align-items: baseline; cursor: pointer; }
+.ledger-label { overflow-wrap: anywhere; }
+.ledger-why { margin: 2px 0 0 22px; overflow-wrap: anywhere; }
+.ledger-entry.status-dropped .ledger-label, .ledger-entry.status-reverted .ledger-label, .ledger-entry.off .ledger-label { color: var(--muted); text-decoration: line-through; }
+.ledger-entry.pending { border-color: #a16207; border-style: dashed; }
+.status-word { font-weight: 600; }
+.status-word.status-added { color: #86efac; }
+.status-word.status-dropped { color: #fca5a5; }
+.status-word.status-reverted { color: #fde68a; }
+.badge.action-setting { background: #1e3a8a; color: #bfdbfe; }
+.shots img { width: 100%; border-radius: 6px; border: 1px solid var(--border); margin-top: 6px; }
+.shots button[aria-pressed="true"] { border-color: var(--accent); }
+@media (prefers-reduced-motion: reduce) { .step-running .step-dot { animation: none; } }

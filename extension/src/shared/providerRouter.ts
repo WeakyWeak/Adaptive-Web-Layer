@@ -12,6 +12,8 @@ export interface RouterOptions {
   consent: CloudConsent;
   local?: LLMProvider;
   cloud?: LLMProvider;
+  /** The cloud supervisor (P10); defaults to the cloud backend with `reviewModel`. */
+  reviewer?: LLMProvider;
 }
 
 export function createLocalProvider(settings: AiSettings): LLMProvider {
@@ -25,14 +27,26 @@ export function createLocalProvider(settings: AiSettings): LLMProvider {
   });
 }
 
-export function createCloudProvider(settings: AiSettings): LLMProvider {
+/** The configured model of the active cloud backend. */
+export function cloudModelId(settings: AiSettings): string {
+  if (settings.cloudBackend === "anthropic") return settings.anthropicModel;
+  if (settings.cloudBackend === "openai") return settings.openaiModel;
+  return settings.cloudModel;
+}
+
+export function createCloudProvider(settings: AiSettings, modelId = cloudModelId(settings)): LLMProvider {
   return new CloudProvider({
     proxyUrl: settings.cloudProxyUrl,
     proxyToken: settings.cloudProxyToken,
     backend: settings.cloudBackend,
-    modelId: settings.cloudBackend === "anthropic" ? settings.anthropicModel : settings.cloudModel,
+    modelId,
     timeoutMs: settings.cloudTimeoutMs,
   });
+}
+
+/** The supervisor's model: `reviewModel` on Gemini, the backend's model elsewhere. */
+export function reviewModelId(settings: AiSettings): string {
+  return settings.cloudBackend === "gemini" ? settings.reviewModel : cloudModelId(settings);
 }
 
 function isUserCancel(error: unknown, signal?: AbortSignal): boolean {
@@ -45,9 +59,14 @@ export class ProviderRouter {
   /** Which provider produced the last successful reply. */
   usedProvider: "local" | "cloud" | null = null;
 
+  private readonly reviewer: LLMProvider;
+  /** Model id behind the last successful review (it may have fallen back to `cloudModel`). */
+  reviewedBy: string | null = null;
+
   constructor(private readonly options: RouterOptions) {
     this.local = options.local ?? createLocalProvider(options.settings);
     this.cloud = options.cloud ?? createCloudProvider(options.settings);
+    this.reviewer = options.reviewer ?? createCloudProvider(options.settings, reviewModelId(options.settings));
   }
 
   private requireCloudConsent(reason?: string): void {
@@ -93,6 +112,30 @@ export class ProviderRouter {
 
   generateStructured(request: StructuredRequest): Promise<unknown> {
     return this.route(Boolean(request.images?.length), (provider) => provider.generateStructured(request), request.signal);
+  }
+
+  /**
+   * P10 supervision: the cloud reviews a local draft. Never reachable in local
+   * mode; needs the site's cloud consent like any cloud call. If the review
+   * model is overloaded, the regular cloud model reviews instead.
+   */
+  async review(request: StructuredRequest): Promise<unknown> {
+    const { settings } = this.options;
+    if (settings.mode === "local") throw new ProviderError("unsupported", "Local mode never sends anything to a cloud reviewer.");
+    this.requireCloudConsent("The cloud reviewer needs your consent before the draft and a screenshot of this page are sent.");
+    const primary = reviewModelId(settings);
+    try {
+      const reply = await this.reviewer.generateStructured(request);
+      this.reviewedBy = primary;
+      return reply;
+    } catch (error) {
+      const fallback = cloudModelId(settings);
+      const busy = error instanceof ProviderError && (error.code === "timeout" || error.code === "rate-limit" || /overloaded|busy|503/i.test(error.message));
+      if (!busy || fallback === primary || isUserCancel(error, request.signal)) throw error;
+      const reply = await this.cloud.generateStructured(request);
+      this.reviewedBy = fallback;
+      return reply;
+    }
   }
 
   /**

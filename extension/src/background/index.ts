@@ -7,10 +7,11 @@ import { loadSettings, onSettingsChange, saveSettings } from "../shared/storage"
 import { isSiteEnabled, normalizeHostname, resolveAppearance, resolveTypography, type Settings } from "../shared/settings";
 import { ProviderRouter } from "../shared/providerRouter";
 import { readJob } from "../shared/aiJob";
-import { applyJob, discardJob, runAiJob, saveProfile, setElementEnabled, undoJob, useFallback } from "./aiJobs";
+import { FIX_PAGE_REQUEST } from "../shared/elementPlan";
+import { applyJob, clearJobData, discardJob, requestReview, runAiJob, saveProfile, setElementEnabled, undoJob, useFallback } from "./aiJobs";
 import { clearUnderstand, failOrphanedUnderstand, hideOnPage, retryUnderstand, runPageKind, runSelection } from "./comprehension";
 import { applyInspectFixes, cancelInspect, clearInspect, explainInspect, failOrphanedInspect, runInspect, undoInspectFixes } from "./inspect";
-import { cancelJob, clearJob, failOrphanedJobs } from "./jobs";
+import { cancelJob, failOrphanedJobs } from "./jobs";
 
 console.log("[AWL background] service worker started");
 void failOrphanedJobs();
@@ -41,7 +42,7 @@ chrome.tabs.onUpdated.addListener((tabId, change, tab) => {
     void readJob(tabId).then((job) => {
       if (job && (job.status === "preview" || job.status === "running")) {
         cancelJob(tabId);
-        void clearJob(tabId);
+        void clearJobData(tabId);
       }
     });
     // Comprehension results belong to the page that was loaded.
@@ -52,7 +53,7 @@ chrome.tabs.onUpdated.addListener((tabId, change, tab) => {
     void clearInspect(tabId);
   }
 });
-chrome.tabs.onRemoved.addListener((tabId) => { cancelJob(tabId); void clearJob(tabId); cancelJob(tabId, "understand"); void clearUnderstand(tabId); cancelJob(tabId, "inspect"); void clearInspect(tabId); });
+chrome.tabs.onRemoved.addListener((tabId) => { cancelJob(tabId); void clearJobData(tabId); cancelJob(tabId, "understand"); void clearUnderstand(tabId); cancelJob(tabId, "inspect"); void clearInspect(tabId); });
 
 // ── Provider status ───────────────────────────────────────────────────────────
 async function providerStatus(settings: Settings, target: "local" | "cloud") {
@@ -110,13 +111,15 @@ function handle(msg: AnyMessage, reply: Reply, sender: chrome.runtime.MessageSen
           privacy.cloudAllowOnceFor = undefined;
           privacy.cloudSiteConsents = { ...privacy.cloudSiteConsents, [hostname]: msg.decision === "allow-site" ? "allow" : "deny" };
         }
+        // P10: page text for the reviewer is its own choice; "deny" always withdraws it.
+        if (msg.text !== undefined || msg.decision === "deny") privacy.cloudTextSites = { ...privacy.cloudTextSites, [hostname]: msg.decision !== "deny" && msg.text === true };
         ack(reply, await saveSettings({ ...settings, privacy }) ? null : "Could not save cloud consent.");
       })();
       return true;
 
     case "AI_RUN":
       // The result is delivered through the job record, not this reply.
-      void runAiJob(msg.tabId, msg.request);
+      void runAiJob(msg.tabId, msg.request, msg.kind);
       ack(reply, null);
       return false;
 
@@ -134,6 +137,10 @@ function handle(msg: AnyMessage, reply: Reply, sender: chrome.runtime.MessageSen
 
     case "AI_DISCARD":
       void discardJob(msg.tabId).then(() => ack(reply, null));
+      return true;
+
+    case "AI_REVIEW":
+      void requestReview(msg.tabId).then((error) => ack(reply, error));
       return true;
 
     case "AI_USE_FALLBACK":
@@ -206,6 +213,14 @@ chrome.runtime.onMessage.addListener((raw, sender, sendResponse) => {
 
 // The toolbar button keeps the quick-settings popup; the AI panel opens from it.
 void chrome.sidePanel?.setPanelBehavior({ openPanelOnActionClick: false }).catch(() => undefined);
+
+// P10: Alt+Shift+F runs "Fix this page" on the active tab and opens the panel.
+// A keyboard shortcut grants activeTab, which lets the reviewer see screenshots.
+chrome.commands?.onCommand.addListener((command, tab) => {
+  if (command !== "fix-page" || tab?.id === undefined) return;
+  void chrome.sidePanel?.open({ tabId: tab.id }).catch(() => undefined);
+  void runAiJob(tab.id, FIX_PAGE_REQUEST, "fix");
+});
 
 chrome.runtime.onInstalled.addListener((details) => {
   console.log("[AWL background] installed/updated:", details.reason);

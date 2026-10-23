@@ -45,6 +45,12 @@ export const SnapshotBlockSchema = z.object({
   similar: z.number().int().min(0).max(40).optional(),
   /** The main content region or one of its ancestors. */
   main: z.boolean().default(false),
+  /** Inside the main content region (an in-article box, the comments). */
+  inMain: z.boolean().default(false),
+  /** Visible parts inside it that the model may ask to see (P10 drill-down). */
+  children: z.number().int().min(0).max(99).default(0),
+  /** Measured ad signals: a cross-site frame, sponsored links, ad-slot markup. */
+  ad: z.boolean().default(false),
   /** Id of the nearest enclosing block, if any. */
   within: BlockIdSchema.optional(),
 });
@@ -87,6 +93,9 @@ export const PreviewElementsSchema = z.object({
 });
 export type PreviewElements = z.infer<typeof PreviewElementsSchema>;
 
+/** P10: the one-click request behind "Fix this page" (it also gets the measured problems). */
+export const FIX_PAGE_REQUEST = "Fix this page so it is easier for me to read: adjust text size, spacing, width and contrast where the measured problems call for it, and hide distracting clutter like pop-ups and promo bars; keep the main content and navigation";
+
 /** The one-click request behind the side panel's "Clean this page" button. */
 export const CLEAN_PAGE_REQUEST = "Clean this page: hide clutter like cookie banners, pop-ups, promos and recommendation rails; keep the main content and navigation";
 
@@ -117,8 +126,10 @@ export function describeBlockForPrompt(block: SnapshotBlock): string {
     block.text ? JSON.stringify(block.text) : "",
     `· ${where} · ${block.area}% of page`,
     block.linkDensity >= 0.5 ? "· mostly links" : "",
+    block.ad ? "· ad signals" : "",
     block.within ? `· inside ${block.within}` : "",
-    block.main ? "· MAIN CONTENT" : "",
+    block.main ? "· MAIN CONTENT" : block.inMain ? "· in the article" : "",
+    block.children >= 2 ? `· ${block.children} parts` : "",
   ];
   return parts.filter(Boolean).join(" ");
 }
@@ -186,7 +197,7 @@ export function previewElementsOf(items: readonly ElementItem[]): PreviewElement
 // Element changes are kept only when the request is about page parts. This is
 // the code-side defence against page text talking the model into hiding things
 // on an unrelated request ("make the text bigger").
-const ELEMENT_WORDS = /\b(hide|hidden|remove|clean|clutter\w*|declutter|distract\w*|get rid|banners?|pop-?ups?|modals?|overlays?|ads?|adverts?\w*|promos?\w*|cookies?|consent|newsletters?|subscri\w*|sidebars?|rails?|recommend\w*|related|comments?|share|social|highlight\w*|emphasi\w*|point out|mark|dim|fade|gr[ae]y out|tidy|noise|annoy\w*|sticky|bar)\b/i;
+export const ELEMENT_WORDS = /\b(hide|hidden|remove|clean|clutter\w*|declutter|distract\w*|get rid|banners?|pop-?ups?|modals?|overlays?|ads?|adverts?\w*|promos?\w*|cookies?|consent|newsletters?|subscri\w*|sidebars?|rails?|recommend\w*|related|comments?|share|social|highlight\w*|emphasi\w*|point out|mark|dim|fade|gr[ae]y out|tidy|noise|annoy\w*|sticky|bar)\b/i;
 
 export function dropUnrequestedElements(request: string, elements: Elements | undefined): { elements: Elements | undefined; dropped: number } {
   if (!elements) return { elements, dropped: 0 };
@@ -232,9 +243,9 @@ export function suggestElements(request: string, snapshot: DomSnapshot): Element
   const chosen = new Set<string>();
   for (const block of snapshot.blocks) {
     if (block.main || block.protect === "navigation" || KEEP.test(`${block.hints} ${block.text}`)) continue;
-    // Page text alone only counts for overlays, asides and dialogs, so an
-    // article that mentions "cookies" is never matched.
-    const textCounts = block.fixed || block.tag === "aside" || block.role === "dialog";
+    // Page text alone only counts for overlays, asides, dialogs and small
+    // blocks outside the article, so an article that mentions "cookies" is never matched.
+    const textCounts = block.fixed || block.tag === "aside" || block.role === "dialog" || (!block.inMain && !block.main && block.area < 8 && block.linkDensity < 0.5);
     const matches = kinds.some((kind) => kind.matches.test(block.hints) || (textCounts && kind.matches.test(block.text)));
     if (matches && !isInside(block, chosen, byId)) chosen.add(block.id);
   }

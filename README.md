@@ -49,10 +49,13 @@ Pages:
 - http://localhost:4173/a11y-issues.html — planted accessibility and readability problems (side panel → **Inspect this page**)
 - http://localhost:4173/a11y-clean.html — the same content with none of them (scores 100)
 - http://localhost:4173/clutter.html — article under a cookie banner, newsletter pop-up, promo bar and "Recommended" rail (try **Clean this page** in the side panel)
+- http://localhost:4173/obfuscated-clutter.html — the same kinds of clutter with random class names, no roles and nothing fixed, plus a cross-site ad frame (try **Clean this page** in hybrid mode and read the review)
 
 ## AI setup (local, cloud, hybrid)
 
-The AI assistant lives in Chrome's **side panel**: click the toolbar icon → **Open AI assistant**. Type a request ("make the text larger, keep code colours"). It previews on the page; then you choose **Apply**, **Discard**, **Undo** or **Save as profile**. Saved settings always apply with zero AI calls.
+The AI assistant lives in Chrome's **side panel**: click the toolbar icon → **Open AI assistant**. Type a request ("make the text larger, keep code colours"), or press **Fix this page** / **Clean this page** (or Alt+Shift+F on any page). It previews on the page; then you choose **Apply**, **Discard**, **Undo** or **Save as profile**. Saved settings always apply with zero AI calls.
+
+Every AI run is **supervised**: the local model drafts, code measures the draft and undoes anything that makes the page measurably worse, and in **Hybrid** mode a cloud model reviews the draft (removing mistakes, adding what was missed). The panel shows each step, the readability score before → draft → final, and every change as kept, removed, added or undone, with the reason.
 
 ### What to run (one terminal each)
 
@@ -64,11 +67,11 @@ The AI assistant lives in Chrome's **side panel**: click the toolbar icon → **
 
 `npm run llm` finds `llama-server` on your PATH or at `~/llama.cpp/build/bin/llama-server` and loads `qwen/qwen2.5-coder-7b-instruct-q4_k_m.gguf` with every layer on the GPU. Override with `MODEL=… CTX=… npm run llm`.
 
-The proxy reads `server/.env` (copy `server/.env.example`). It needs `PROXY_TOKEN` (any long random string you choose) and at least one of `GEMINI_API_KEY` / `ANTHROPIC_API_KEY`; `SARVAM_API_KEY` enables English → Hindi translation. `npm run smoke` checks the keys without the extension (it sends one fixed test sentence to each configured service).
+The proxy reads `server/.env` (copy `server/.env.example`). It needs `PROXY_TOKEN` (any long random string you choose) and at least one cloud backend: `GEMINI_API_KEY` (free tier; the default reviewer), `ANTHROPIC_API_KEY` (a paid API key; a Claude Pro subscription does not include API access), or any OpenAI-compatible API via `OPENAI_COMPAT_BASE_URL` / `OPENAI_COMPAT_API_KEY` / `OPENAI_COMPAT_MODEL`. `SARVAM_API_KEY` enables English → Hindi translation. `npm run smoke` checks the keys without the extension (one fixed test sentence per service, plus a tiny test image for the reviewer's model).
 
 Then in **Settings → AI**:
 - **Local only**: click **Test local connection**.
-- **Cloud / Hybrid**: pick Gemini or Claude, paste the same `PROXY_TOKEN` into **Proxy token**, and click **Test cloud proxy**.
+- **Cloud / Hybrid**: pick the provider, paste the same `PROXY_TOKEN` into **Proxy token**, and click **Test cloud proxy**. **Cloud review** sets when hybrid asks the cloud to review (every draft, first run per site, or only when the local draft looks unsure); **Review model** picks the Gemini model for reviews.
 - **Demo mode** uses built-in rules and no model at all.
 
 ### Measure a model before the demo
@@ -77,6 +80,8 @@ Then in **Settings → AI**:
 npm run eval:planner -- --target local                     # llama-server on :8080 (also scores element precision/recall)
 npm run eval:planner -- --target cloud --backend gemini --model gemini-3.5-flash-lite --token <PROXY_TOKEN>
 npm run eval:comprehension -- --target local               # TL;DR, glossary, explain, define, local translation, injection (P08 fixtures)
+npm run eval:supervisor -- --target cloud --token <PROXY_TOKEN>   # does the reviewer catch planted draft mistakes? (P10)
+npm run eval:supervisor -- --target local                  # the local model as its own reviewer, for comparison
 ```
 It prints the valid-plan rate, accuracy on 25 cases (including prompt-injection pages) and p50/p95 latency, and writes a report to `extension/eval/results/`.
 

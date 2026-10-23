@@ -1,20 +1,31 @@
 // ─── AI job lifecycle (background only) ──────────────────────────────────────
 // run → preview → apply → undo, all persisted in the job record. The page only
 // ever changes through settings resolution (preview overlay or saved site rule).
+// P10: every run is supervised: the draft is measured (and auto-reverted where
+// it makes the page worse), then reviewed by the cloud when the mode, consent
+// and review policy allow (see supervise.ts).
 
 import { describeChanges, type PlanChanges } from "../shared/aiFields";
 import { readJob, type AiJob } from "../shared/aiJob";
-import { previewElementsOf, validateElements, type ElementItem, type ElementReview, type PreviewElements } from "../shared/elementPlan";
+import { validateElements, type ElementItem, type ElementReview } from "../shared/elementPlan";
 import { deterministicPlan } from "../shared/intents";
+import type { AI_RUN_KINDS } from "../shared/messages";
+import { BlocksSchema } from "../shared/messages";
 import { detectShortcut, DomSnapshotSchema, formatProviderError, toProviderError, type DomSnapshot, type Plan } from "../shared/plan";
 import { ProviderRouter } from "../shared/providerRouter";
+import { draftIsUnsure, draftLedger, type LedgerSource } from "../shared/review";
 import { cloudConsentFor, isSiteEnabled, normalizeHostname, resolveAppearance, resolveFocus, resolveMotion, resolveTypography, SiteRuleSchema } from "../shared/settings";
 import { currentAiValues, exactSiteRule, restoreSiteRule, withSiteElements, withSitePatch, type SiteElements } from "../shared/sitePatch";
 import { loadSettings, saveSettings } from "../shared/storage";
 import { consumeAllowOnce } from "./consent";
-import { beginJob, clearJob, endJob, patchJob, writeJob } from "./jobs";
+import { beginJob, cancelJob, clearJob, endJob, patchJob, writeJob } from "./jobs";
 import { runPlanner } from "./planner";
+import { problemLines } from "./reviewPrompt";
+import { clearShots } from "./screenshot";
+import { clearSnapshot, decideReview, inspectorChanges, measureState, reviewJob, saveSnapshot, setPreview, settle, steps, type Settled } from "./supervise";
 import { tabMessage, tabPage } from "./tabs";
+
+export type AiRunKind = typeof AI_RUN_KINDS[number];
 
 const DEMO_PLAN: Plan = {
   interpretedRequest: "Make the article easier to read",
@@ -22,12 +33,6 @@ const DEMO_PLAN: Plan = {
   reasons: ["Demo mode: canned plan, no AI model was used."],
   confidence: 1,
 };
-
-/** Show changes + element items on the page without saving; null clears the preview. */
-function setPreview(tabId: number, preview: { changes: PlanChanges; elements?: readonly ElementItem[] } | null) {
-  const elements: PreviewElements | undefined = preview?.elements?.length ? previewElementsOf(preview.elements) : undefined;
-  return tabMessage(tabId, { type: "SET_PREVIEW", changes: preview?.changes ?? null, elements });
-}
 
 async function tabHostname(tabId: number): Promise<string | null> {
   return (await tabPage(tabId))?.hostname ?? null;
@@ -65,10 +70,16 @@ async function runShortcut(tabId: number, hostname: string, request: string, bas
   return true;
 }
 
-export async function runAiJob(tabId: number, request: string): Promise<void> {
+/** The visible parts of these blocks (drill-down), or null when the page cannot answer. */
+async function expandVia(tabId: number, ids: string[]) {
+  const parsed = BlocksSchema.safeParse(await tabMessage(tabId, { type: "EXPAND_BLOCKS", ids }));
+  return parsed.success ? parsed.data.blocks : null;
+}
+
+export async function runAiJob(tabId: number, request: string, kind: AiRunKind = "ask"): Promise<void> {
   const hostname = await tabHostname(tabId);
   const now = Date.now();
-  const base: AiJob = { id: `${now}-${Math.random().toString(36).slice(2, 8)}`, tabId, hostname: hostname ?? "", request, status: "running", stage: "Reading the page", received: 0, startedAt: now, updatedAt: now };
+  const base: AiJob = { id: `${now}-${Math.random().toString(36).slice(2, 8)}`, tabId, hostname: hostname ?? "", request, status: "running", stage: "Reading the page", received: 0, startedAt: now, updatedAt: now, kind };
   if (!hostname) {
     await writeJob(errorJob(base, "unsupported", "AI commands only work on regular web pages.", "Open an http(s) page and try again."));
     return;
@@ -83,15 +94,19 @@ export async function runAiJob(tabId: number, request: string): Promise<void> {
 
   const signal = beginJob(tabId);
   const current = currentAiValues(settings, hostname);
-  let job = await writeJob(base);
+  const supervision = { steps: steps({ draft: { status: "running" } }), review: "pending" as const, ledger: [], scores: {}, shots: false, reverted: [], canReview: false, needsConsent: false };
+  let job = await writeJob({ ...base, supervision });
   let snapshot: DomSnapshot | null = null;
   await setPreview(tabId, null);
+  await clearShots(tabId);
   try {
     snapshot = await snapshotOf(tabId);
     if (!snapshot) {
       await writeJob(errorJob(job, "no-content-script", "Could not read this page.", "Reload the page (the extension may have been updated after it loaded)."));
       return;
     }
+    // Observe: what code measures before anything changes.
+    const before = await measureState(tabId, null);
 
     let plan: Plan;
     let changes: PlanChanges;
@@ -107,18 +122,25 @@ export async function runAiJob(tabId: number, request: string): Promise<void> {
       const ai = settings.ai;
       const router = new ProviderRouter({ settings: ai, consent: cloudConsentFor(settings.privacy, hostname) });
       const target = ai.mode === "cloud" ? `cloud AI (${ai.cloudBackend})` : "local AI";
-      job = (await patchJob(tabId, job.id, { stage: `Asking ${target}` })) ?? job;
+      job = (await patchJob(tabId, job.id, { stage: `Asking ${target} for a draft` })) ?? job;
       let lastReport = 0;
-      const result = await runPlanner(router, { request, snapshot, current }, {
+      const result = await runPlanner(router, {
+        request,
+        snapshot,
+        current,
+        problems: kind === "fix" && before ? problemLines(before.report.findings) : undefined,
+        expand: (ids) => expandVia(tabId, ids),
+      }, {
         signal,
         onProgress: (received) => {
           // Throttled: each write is also an extension API call that keeps the worker alive.
           if (Date.now() - lastReport < 500) return;
           lastReport = Date.now();
-          void patchJob(tabId, job.id, { received, stage: `Receiving from ${target}` }, "running");
+          void patchJob(tabId, job.id, { received, stage: `Receiving the draft from ${target}` }, "running");
         },
       });
       plan = result.plan;
+      snapshot = result.snapshot;
       changes = result.changes;
       elements = result.elements;
       source = router.usedProvider ?? undefined;
@@ -126,24 +148,77 @@ export async function runAiJob(tabId: number, request: string): Promise<void> {
       warnings.push(...result.notes);
       await consumeAllowOnce(hostname, router.usedProvider === "cloud");
     }
+    // "Fix this page" also gets the inspector's high-confidence fixes the draft left out.
+    const sources: Record<string, LedgerSource> = {};
+    if (kind === "fix" && before) {
+      const extra = inspectorChanges(before.report, current, changes);
+      for (const key of Object.keys(extra)) sources[key] = "inspector";
+      changes = { ...changes, ...extra };
+    }
 
     if (signal.aborted) {
       await patchJob(tabId, job.id, { status: "cancelled", stage: "Cancelled" });
       return;
     }
     const summary = { source, interpretedRequest: plan.interpretedRequest, reasons: plan.reasons, confidence: plan.confidence, warnings, rejectedElements: elements.rejected };
+    const draftDone = steps({ draft: { status: "done" } });
     if (Object.keys(changes).length === 0 && elements.items.length === 0) {
-      await patchJob(tabId, job.id, { ...summary, status: "nothing", stage: "Nothing to change", changes: {} });
+      await patchJob(tabId, job.id, { ...summary, status: "nothing", stage: "Nothing to change", changes: {}, supervision: { ...supervision, steps: steps({ draft: { status: "done" }, measure: { status: "skipped" }, review: { status: "skipped" }, final: { status: "done" } }), review: "off" } });
       return;
     }
-    await setPreview(tabId, { changes, elements: elements.items });
-    await patchJob(tabId, job.id, { ...summary, status: "preview", stage: "Previewing", changes, descriptions: describeChanges(changes), elements: elements.items });
-  } catch (caught) {
-    const error = toProviderError(caught);
-    if (error.code === "cancelled") {
+    await saveSnapshot(tabId, snapshot);
+
+    // Measure: preview the draft; undo anything that makes the page measurably worse.
+    job = (await patchJob(tabId, job.id, { ...summary, stage: "Measuring the draft", supervision: { ...supervision, steps: steps({ draft: { status: "done" }, measure: { status: "running" } }, draftDone) } })) ?? job;
+    const ledger = draftLedger(changes, elements.items, source ?? "local", sources);
+    const settled: Settled = before
+      ? await settle(tabId, before.measures, { changes, items: elements.items }, ledger)
+      : { state: { changes, items: elements.items }, ledger, measured: await measureState(tabId, { changes, items: elements.items }), reverted: [], unresolved: [] };
+    if (signal.aborted) {
+      await setPreview(tabId, null);
       await patchJob(tabId, job.id, { status: "cancelled", stage: "Cancelled" });
       return;
     }
+    const final = settled.state;
+    const scores = { before: before?.score.value, draft: settled.measured?.score.value };
+    const measureNote = scores.before !== undefined && scores.draft !== undefined ? `Score ${scores.before} → ${scores.draft}` : before ? undefined : "Could not measure this page";
+    if (Object.keys(final.changes).length === 0 && !final.items.some((item) => item.enabled)) {
+      await setPreview(tabId, null);
+      await patchJob(tabId, job.id, { status: "nothing", stage: "Nothing to change", changes: {}, elements: final.items, warnings: [...warnings, "Every change made the page measurably worse, so none was kept."], supervision: { ...supervision, ledger: settled.ledger, scores, reverted: settled.reverted, steps: steps({ draft: { status: "done" }, measure: { status: "done", note: measureNote }, review: { status: "skipped" }, final: { status: "done" } }), review: "off" } });
+      return;
+    }
+
+    // Review: by the cloud when the mode, consent and review policy allow.
+    const unsure = draftIsUnsure({ confidence: plan.confidence, before: before?.measures, draft: settled.measured?.measures, requested: elements.items.length + elements.rejected.length, refused: elements.rejected.length });
+    const decision = decideReview(settings, hostname, unsure);
+    await patchJob(tabId, job.id, {
+      ...summary,
+      status: "preview",
+      stage: decision.run ? "Cloud is reviewing the draft" : "Previewing",
+      changes: final.changes,
+      descriptions: describeChanges(final.changes),
+      elements: final.items,
+      warnings: [...warnings, ...settled.unresolved.map((reason) => `Still measured worse: ${reason}`)],
+      supervision: {
+        ...supervision,
+        ...decision.supervision,
+        ledger: settled.ledger,
+        scores,
+        before: before?.measures,
+        reverted: settled.reverted,
+        confidence: plan.confidence,
+        steps: steps({ draft: { status: "done" }, measure: { status: before ? "done" : "skipped", note: measureNote }, review: { status: decision.run ? "running" : "skipped", note: decision.run ? undefined : decision.supervision.note }, final: { status: decision.run ? "pending" : "done" } }),
+      },
+    });
+    if (decision.run) await reviewJob(tabId, job.id, signal);
+  } catch (caught) {
+    const error = toProviderError(caught);
+    if (error.code === "cancelled") {
+      await setPreview(tabId, null);
+      await patchJob(tabId, job.id, { status: "cancelled", stage: "Cancelled" });
+      return;
+    }
+    await setPreview(tabId, null);
     const { message, hint } = formatProviderError(error);
     const suggestion = snapshot ? deterministicPlan(request, current, snapshot) : null;
     const suggestedItems = suggestion && snapshot ? validateElements(suggestion.elements, snapshot).items : [];
@@ -153,10 +228,24 @@ export async function runAiJob(tabId: number, request: string): Promise<void> {
       stage: "Failed",
       error: { code: error.code, message, hint },
       fallback: useful ? { changes: suggestion.changes, descriptions: describeChanges(suggestion.changes), elements: suggestedItems } : undefined,
+      supervision: undefined,
     });
   } finally {
     endJob(tabId, signal);
   }
+}
+
+/** P10: ask the cloud to review the current preview (after consent, a skipped or a failed review). */
+export async function requestReview(tabId: number): Promise<string | null> {
+  const job = await readJob(tabId);
+  if (job?.status !== "preview" || !job.supervision) return "There is no previewed draft to review.";
+  if (job.supervision.review === "running") return "The review is already running.";
+  const settings = await loadSettings();
+  if (settings.ai.demoMode) return "Demo mode has no cloud reviewer.";
+  if (settings.ai.mode === "local") return "Local mode never sends anything to the cloud. Switch AI mode to hybrid in Settings to have drafts reviewed.";
+  const signal = beginJob(tabId);
+  void reviewJob(tabId, job.id, signal).finally(() => endJob(tabId, signal));
+  return null;
 }
 
 /** Turn the enabled element items into selectors that survive a reload. */
@@ -178,6 +267,7 @@ async function savedSelectors(tabId: number, items: readonly ElementItem[]): Pro
 export async function applyJob(tabId: number): Promise<string | null> {
   const job = await readJob(tabId);
   if (job?.status !== "preview" || !job.changes) return "There is no preview to apply.";
+  if (job.supervision?.review === "running") return "The cloud is still reviewing. Wait for it, or cancel the review first.";
   const resolved = await savedSelectors(tabId, job.elements ?? []);
   if (!resolved) return "Could not read the page to save the element changes. Reload it and try again.";
   const settings = await loadSettings();
@@ -210,8 +300,14 @@ export async function undoJob(tabId: number): Promise<string | null> {
 }
 
 export async function discardJob(tabId: number): Promise<void> {
+  cancelJob(tabId);
   await setPreview(tabId, null);
-  await clearJob(tabId);
+  await clearJobData(tabId);
+}
+
+/** The job plus what it keeps beside it (snapshot, screenshots). */
+export async function clearJobData(tabId: number): Promise<void> {
+  await Promise.all([clearJob(tabId), clearShots(tabId), clearSnapshot(tabId)]);
 }
 
 export async function useFallback(tabId: number): Promise<string | null> {

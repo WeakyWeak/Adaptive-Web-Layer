@@ -2,7 +2,7 @@ import { z } from "zod";
 
 // ─── Schema version ──────────────────────────────────────────────────────────
 // Bump this when you add a migration below.
-export const SETTINGS_VERSION = 9;
+export const SETTINGS_VERSION = 10;
 
 // ─── Typography preferences ──────────────────────────────────────────────────
 export const FONT_FAMILY_OPTIONS = [
@@ -97,6 +97,12 @@ export const SiteRuleSchema = z.object({
 export type SiteRule = z.infer<typeof SiteRuleSchema>;
 
 // ─── AI settings (P05+) ───────────────────────────────────────────────────────
+export const CLOUD_BACKENDS = ["gemini", "anthropic", "openai"] as const;
+export type CloudBackend = typeof CLOUD_BACKENDS[number];
+/** always: every AI run; first-per-site: the first run on each site; when-unsure: only when the local draft looks doubtful. */
+export const REVIEW_POLICIES = ["always", "first-per-site", "when-unsure"] as const;
+export type ReviewPolicy = typeof REVIEW_POLICIES[number];
+
 export const AiSettingsSchema = z.object({
   mode: z.enum(["local", "cloud", "hybrid"]).default("local"),
   // llama-server default port is 8080; Ollama uses 11434 with /v1 endpoint
@@ -110,9 +116,15 @@ export const AiSettingsSchema = z.object({
   /** Set only when the local model accepts images (e.g. a model loaded with --mmproj). */
   localVision: z.boolean().default(false),
   // The proxy is local; this token authorizes only that proxy, never a provider.
-  cloudBackend: z.enum(["gemini", "anthropic"]).default("gemini"),
+  cloudBackend: z.enum(CLOUD_BACKENDS).default("gemini"),
   cloudModel: z.string().min(1).max(128).default("gemini-3.5-flash-lite"),
   anthropicModel: z.string().min(1).max(128).default("claude-opus-5-5"),
+  /** Model behind the proxy's OpenAI-compatible backend (OPENAI_COMPAT_* in server/.env). */
+  openaiModel: z.string().min(1).max(128).default("gpt-compatible"),
+  /** P10: the cloud supervisor. Reviews are rare, so a stronger model than `cloudModel` (Gemini only; other backends use their model setting). */
+  reviewModel: z.string().min(1).max(128).default("gemini-3.5-flash"),
+  /** P10: when hybrid/cloud mode asks the cloud to review the local draft. */
+  reviewPolicy: z.enum(REVIEW_POLICIES).default("always"),
   cloudProxyUrl: z.string().url().default("http://127.0.0.1:8787"),
   cloudProxyToken: z.string().max(512).default(""),
   cloudTimeoutMs: z.number().min(1000).max(300000).default(120000),
@@ -131,10 +143,19 @@ export const PrivacySettingsSchema = z.object({
   cloudSiteConsents: z.record(z.enum(["allow", "deny"])).default({}),
   /** A single queued cloud request; consumed by the background after use. */
   cloudAllowOnceFor: z.string().optional(),
+  /** P10: sites whose page text the cloud reviewer may read (to check simplified text). Separate from cloud consent, off by default. */
+  cloudTextSites: z.record(z.boolean()).default({}),
+  /** P10: sites the cloud has reviewed at least once (for the "first-per-site" review policy). */
+  reviewedSites: z.array(z.string().max(253)).max(500).default([]),
 });
 export type PrivacySettings = z.infer<typeof PrivacySettingsSchema>;
 
 export type CloudConsent = "allow" | "deny" | "pending";
+
+/** May the cloud reviewer read page text on this site? Needs cloud consent too. */
+export function cloudTextAllowed(privacy: PrivacySettings, hostname: string): boolean {
+  return cloudConsentFor(privacy, hostname) === "allow" && privacy.cloudTextSites[normalizeHostname(hostname)] === true;
+}
 
 export function cloudConsentFor(privacy: PrivacySettings, hostname: string): CloudConsent {
   const normalized = normalizeHostname(hostname);
@@ -251,6 +272,7 @@ export function matchingSiteRule(settings: Settings, hostname: string): SiteRule
 // Each fn takes the raw object from storage and returns the migrated object.
 type MigrationFn = (raw: Record<string, unknown>) => Record<string, unknown>;
 const migrations: Record<number, MigrationFn> = {
+  10: (raw) => raw, // P10: review settings and text consent, added with defaults
   9: (raw) => {
     const ai = typeof raw.ai === "object" && raw.ai !== null ? raw.ai as Record<string, unknown> : {};
     // Streaming replies make the old 30 s local limit unnecessary; it cut off 7B models.

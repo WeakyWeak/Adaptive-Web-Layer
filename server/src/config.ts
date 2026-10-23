@@ -13,6 +13,8 @@ export interface Config {
   anthropicApiKey: string;
   anthropicEffort: Effort;
   sarvamApiKey: string;
+  /** Any OpenAI-compatible chat-completions API (optional). */
+  openaiCompat: { baseUrl: string; apiKey: string; model: string };
   proxyToken: string;
   port: number;
   /** Exact origins allowed; empty means "any chrome-extension:// origin". */
@@ -42,6 +44,11 @@ export function loadConfig(): Config {
     anthropicApiKey: !placeholder(env.ANTHROPIC_API_KEY) && env.ANTHROPIC_API_KEY?.startsWith("sk-ant-") ? env.ANTHROPIC_API_KEY : "",
     anthropicEffort: effort && EFFORTS.includes(effort) ? effort : "low",
     sarvamApiKey: placeholder(env.SARVAM_API_KEY) ? "" : env.SARVAM_API_KEY ?? "",
+    openaiCompat: {
+      baseUrl: placeholder(env.OPENAI_COMPAT_BASE_URL) ? "" : env.OPENAI_COMPAT_BASE_URL ?? "",
+      apiKey: placeholder(env.OPENAI_COMPAT_API_KEY) ? "" : env.OPENAI_COMPAT_API_KEY ?? "",
+      model: placeholder(env.OPENAI_COMPAT_MODEL) ? "" : env.OPENAI_COMPAT_MODEL ?? "",
+    },
     proxyToken: placeholder(env.PROXY_TOKEN) ? "" : env.PROXY_TOKEN ?? "",
     port: Number(env.PORT ?? 8787),
     allowedOrigins: placeholder(env.ALLOWED_ORIGIN) ? [] : (env.ALLOWED_ORIGIN ?? "").split(",").map((origin) => origin.trim()).filter(Boolean),

@@ -29,6 +29,12 @@
     }
   },
   "options_page": "options/index.html",
+  "commands": {
+    "fix-page": {
+      "suggested_key": { "default": "Alt+Shift+F" },
+      "description": "Fix this page: the local AI drafts, code measures, the cloud reviews (hybrid)"
+    }
+  },
   "content_scripts": [
     {
       "matches": [

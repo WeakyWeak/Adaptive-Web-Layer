@@ -31,11 +31,15 @@ import { DEFAULT_TARGET, SOURCE_LANGUAGE, TRANSLATE_CHUNK_CHARS } from "../share
 import { GlossaryShownSchema, PageTextSchema, type UnderstandSelection } from "../shared/messages";
 import { formatProviderError, ProviderError, toProviderError } from "../shared/plan";
 import { ProviderRouter } from "../shared/providerRouter";
-import { cloudConsentFor, type Settings } from "../shared/settings";
+import { checkFidelity, FidelityReplySchema, type FidelityIssue } from "../shared/review";
+import { zodToJsonSchema } from "../shared/jsonSchema";
+import { cloudConsentFor, cloudTextAllowed, type Settings } from "../shared/settings";
 import { loadSettings } from "../shared/storage";
 import { mask, stripCodeMarks, unmask } from "../shared/textMask";
 import { runComprehension } from "./comprehensionModel";
 import { consumeAllowOnce } from "./consent";
+import { buildFidelitySystemPrompt, buildFidelityUserPrompt } from "./reviewPrompt";
+import { runValidated } from "./structured";
 import { beginJob, endJob, enqueue } from "./jobs";
 import { tabMessage, tabPage, tell } from "./tabs";
 import type { StructuredGenerator } from "./planner";
@@ -84,6 +88,12 @@ export interface Runner {
   signal: AbortSignal;
   /** Sarvam through the router (cloud only, consent-gated). */
   translate(text: string, target: string): Promise<string>;
+  /**
+   * P10: the cloud reviewer checks a (masked) rewrite against its (masked)
+   * original. null when not allowed: local mode, Demo mode, or no page-text
+   * consent for this site.
+   */
+  reviewText(original: string, rewrite: string, checks: readonly FidelityIssue[]): Promise<FidelityIssue[] | null>;
   source(): ResultSource;
 }
 
@@ -95,6 +105,7 @@ async function runJob(tabId: number, kind: ComprehensionKind, hostname: string, 
   const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   await updateState(tabId, (state) => ({ ...(state.url === url ? state : { tabId, updatedAt: 0 }), url, running: { id, kind, stage: "Reading", startedAt: Date.now() }, error: undefined }));
   let usedSarvam = false;
+  let usedReviewer = false;
   const runner: Runner = {
     settings,
     router,
@@ -105,11 +116,23 @@ async function runJob(tabId: number, kind: ComprehensionKind, hostname: string, 
       usedSarvam = true;
       return translated;
     },
+    reviewText: async (original, rewrite, checks) => {
+      if (!router || settings.ai.mode === "local" || !cloudTextAllowed(settings.privacy, hostname)) return null;
+      const { reply } = await runValidated({ generateStructured: (request) => router.review(request) }, {
+        systemPrompt: buildFidelitySystemPrompt(),
+        userPrompt: (errors) => buildFidelityUserPrompt(original, rewrite, checks, errors),
+        schema: FidelityReplySchema,
+        jsonSchema: zodToJsonSchema(FidelityReplySchema),
+        maxTokens: 600,
+      }, { signal });
+      usedReviewer = true;
+      return reply.issues.map((issue) => ({ ...issue, source: "cloud" as const }));
+    },
     source: () => settings.ai.demoMode ? "demo" : usedSarvam ? "sarvam" : router?.usedProvider ?? "local",
   };
   try {
     await work(runner);
-    await consumeAllowOnce(hostname, usedSarvam || router?.usedProvider === "cloud");
+    await consumeAllowOnce(hostname, usedSarvam || usedReviewer || router?.usedProvider === "cloud");
   } catch (caught) {
     const error = toProviderError(caught);
     if (error.code !== "cancelled") {
@@ -274,6 +297,19 @@ export async function selectionResult(runner: Runner, request: UnderstandSelecti
     const { reply } = await runComprehension(runner.router, "simplify", { text: masked.text }, { signal: runner.signal });
     const restored = unmask(reply.text, masked.tokens);
     lost(restored.missing);
+    // P10: a wrong simplification is worse than none. Code checks first, then the cloud reviewer if allowed.
+    const checks = checkFidelity(original, restored.text);
+    let cloud: FidelityIssue[] | null = null;
+    try {
+      if (checks.length > 0 || runner.settings.ai.reviewPolicy === "always") {
+        await stage("Checking the rewrite");
+        cloud = await runner.reviewText(masked.text, reply.text, checks);
+      }
+    } catch (error) {
+      if (toProviderError(error).code === "cancelled") throw error;
+      notes.push("The cloud check of this rewrite failed; only the code check ran.");
+    }
+    notes.push(...fidelityNotes(checks, cloud));
     return { ...base, text: restored.text, gradeLevel: reply.gradeLevel, source: runner.source(), cached: false, notes };
   }
 
@@ -292,6 +328,15 @@ export async function selectionResult(runner: Runner, request: UnderstandSelecti
   if (request.local) notes.push("Translated by the local model: lower quality than Sarvam; check important details.");
   if (!hasDevanagari(restored.text)) notes.push("The reply does not look like Hindi; the translation may have failed.");
   return { ...base, text: restored.text, target: target as SelectionResult["target"], source: runner.source(), cached: false, notes };
+}
+
+/** Plain lines for the reader: what the meaning checks found, and who checked. */
+export function fidelityNotes(checks: readonly FidelityIssue[], cloud: readonly FidelityIssue[] | null): string[] {
+  const issues = [...checks, ...(cloud ?? [])];
+  const lines = issues.slice(0, 5).map((issue) => `Check the original: ${issue.note}`);
+  if (cloud === null) lines.push(checks.length ? "Possible meaning change found by code; the cloud reviewer was not asked (allow page text for this site to have it checked)." : "Code found no changed numbers, names or negations.");
+  else if (cloud.length === 0) lines.push(checks.length ? "The cloud reviewer found no meaning errors beyond what code flagged." : "Code and the cloud reviewer found no meaning errors.");
+  return lines;
 }
 
 /** Side panel retry after a consent decision, or "use the local model instead". */

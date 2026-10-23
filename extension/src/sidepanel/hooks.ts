@@ -32,7 +32,7 @@ export function useActiveTab(): ActiveTab | null {
 }
 
 /** A per-tab record in chrome.storage.session, kept live as the background rewrites it. */
-function useSessionRecord<T>(tabId: number | null, keyOf: (tabId: number) => string, schema: z.ZodType<T, z.ZodTypeDef, unknown>): T | null {
+export function useSessionRecord<T>(tabId: number | null, keyOf: (tabId: number) => string, schema: z.ZodType<T, z.ZodTypeDef, unknown>): T | null {
   const [record, setRecord] = useState<T | null>(null);
   useEffect(() => {
     if (tabId === null) { setRecord(null); return; }

@@ -262,3 +262,36 @@ describe("extractJson", () => {
     expect(() => extractJson("no json here")).toThrow(ProviderError);
   });
 });
+
+describe("ProviderRouter.review (P10 cloud supervisor)", () => {
+  const reviewRouter = (mode: AiSettings["mode"], consent: CloudConsent, reviewer: StubProvider, cloud = new StubProvider("cloud", { ok: "cloud" })) =>
+    new ProviderRouter({ settings: ai({ mode }), consent, local: new StubProvider("local", {}), cloud, reviewer });
+
+  it("is never reachable in local mode", async () => {
+    const reviewer = new StubProvider("cloud", {});
+    await expect(reviewRouter("local", "allow", reviewer).review(request)).rejects.toMatchObject({ code: "unsupported" });
+    expect(reviewer.calls).toBe(0);
+  });
+
+  it("needs the site's cloud consent", async () => {
+    const reviewer = new StubProvider("cloud", {});
+    await expect(reviewRouter("hybrid", "pending", reviewer).review(request)).rejects.toMatchObject({ code: "consent-required" });
+    await expect(reviewRouter("hybrid", "deny", reviewer).review(request)).rejects.toMatchObject({ code: "consent-denied" });
+    expect(reviewer.calls).toBe(0);
+  });
+
+  it("uses the review model, and the regular cloud model when it is busy", async () => {
+    const ok = reviewRouter("hybrid", "allow", new StubProvider("cloud", { ok: "review" }));
+    expect(await ok.review(request)).toEqual({ ok: "review" });
+    expect(ok.reviewedBy).toBe("gemini-3.5-flash");
+    const busy = reviewRouter("hybrid", "allow", new StubProvider("cloud", new ProviderError("timeout", "Gemini did not answer in time")));
+    expect(await busy.review(request)).toEqual({ ok: "cloud" });
+    expect(busy.reviewedBy).toBe("gemini-3.5-flash-lite");
+  });
+
+  it("does not hide other review errors behind the fallback", async () => {
+    const cloud = new StubProvider("cloud", { ok: "cloud" });
+    await expect(reviewRouter("cloud", "allow", new StubProvider("cloud", new ProviderError("safety-block", "blocked")), cloud).review(request)).rejects.toMatchObject({ code: "safety-block" });
+    expect(cloud.calls).toBe(0);
+  });
+});
