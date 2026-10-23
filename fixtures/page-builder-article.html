@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>12 Websites with Confusing Design | Northwind Studio</title>
+<!--
+  Fixture: a page-builder blog post (Elementor-style). No <main> or <article>,
+  every wrapper shares the same first class ("pb-element"), the title sits in
+  a hero outside the post text, and the post column sits beside a sticky
+  sidebar. The main content must still be found (and never hidden or dimmed).
+-->
+<style>
+  body { margin: 0; background: #0b1033; color: #e8ebff; font: 17px/1.6 system-ui, sans-serif; }
+  a { color: #9fb4ff; }
+  .pb-element { box-sizing: border-box; }
+  .site-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 40px; background: #0b1033; border-bottom: 1px solid #2a3170; }
+  .site-header nav a { margin: 0 12px; color: #fff; text-decoration: none; }
+  .notice { text-align: center; font-size: 14px; padding: 6px; background: #151c55; }
+  .hero { padding: 80px 40px; text-align: center; background: linear-gradient(#2a1f5c, #4a2340); }
+  .hero h1 { font-size: 46px; margin: 12px 0; }
+  .hero .byline { font-size: 14px; opacity: 0.8; }
+  .layout { display: flex; gap: 40px; max-width: 1180px; margin: 40px auto; padding: 0 20px; }
+  .left { flex: 1; min-width: 0; }
+  .right { width: 340px; flex: none; }
+  .right .portfolio { position: sticky; top: 20px; padding: 24px; background: #3a1d4a; border-radius: 12px; }
+  .ai-buttons { padding: 16px; border: 1px solid #2a3170; border-radius: 10px; margin-bottom: 20px; }
+  .ai-buttons a { display: inline-block; margin: 4px; padding: 6px 12px; border-radius: 16px; background: #1b2260; }
+  .toc { padding: 14px 18px; background: #1b2260; border-radius: 10px; margin-bottom: 24px; }
+  .related { max-width: 1180px; margin: 40px auto; padding: 0 20px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+  .related .card { height: 180px; padding: 16px; background: #c8f03c; color: #111; border-radius: 12px; }
+  footer { padding: 40px; text-align: center; background: #070a24; }
+</style>
+</head>
+<body>
+<section class="pb-element pb-section site-header">
+  <div class="pb-element logo"><strong>NORTHWIND</strong> studio</div>
+  <nav class="pb-element"><a href="#">Services</a><a href="#">Our Work</a><a href="#">Company</a><a href="#">Insights</a></nav>
+  <a class="pb-element cta" href="#">Book a call</a>
+</section>
+<div class="pb-element notice">We are acquiring small design studios. <a href="#">Learn more</a></div>
+<section class="pb-element pb-section hero">
+  <div class="pb-element hero-inner">
+    <div class="pb-element tag">Web Design</div>
+    <h1>12 Websites with Confusing Design</h1>
+    <p class="pb-element subtitle">A list of twelve sites that make reading hard.</p>
+    <div class="pb-element byline">Morgan Reyes · March 4, 2025</div>
+  </div>
+</section>
+<div class="pb-element layout">
+  <div class="pb-element left">
+    <div class="pb-element ai-buttons"><span>Summarize with AI</span><br><a href="#">ChatGPT</a><a href="#">Claude</a><a href="#">Perplexity</a><a href="#">Gemini</a></div>
+    <div class="pb-element toc"><strong>Table of Contents</strong> <a href="#one">1. Flashing banners</a> · <a href="#two">2. Tiny grey text</a> · <a href="#three">3. Endless pop-ups</a></div>
+    <div class="pb-element post-content">
+      <p>Want to see what makes a website hard to read? This list walks through twelve common mistakes, with what each one costs a reader and how a designer could fix it.</p>
+      <h2 id="one">1. Flashing banners</h2>
+      <p>Moving and blinking elements pull the eye away from the text. Readers with attention difficulties lose their place every few seconds, and many readers simply leave the page within the first minute.</p>
+      <p>The fix is simple: keep motion for feedback, never for decoration, and respect the reduced-motion setting that the operating system already offers to every visitor.</p>
+      <h2 id="two">2. Tiny grey text</h2>
+      <p>Light grey text at twelve pixels on a white background fails contrast guidelines and tires the eyes. Body text should be at least sixteen pixels, and the contrast ratio should be at least 4.5 to 1.</p>
+      <p>Designers often pick grey because it looks calm in a mock-up. On a real screen, in daylight, on a cheap laptop, the same grey turns into a blur that nobody wants to read for long.</p>
+      <h2 id="three">3. Endless pop-ups</h2>
+      <p>A newsletter pop-up, then a cookie banner, then a chat bubble: three interruptions before the first sentence. Each one hides the content the reader came for and asks for a decision they did not plan to make.</p>
+      <p>Ask for one thing at a time, after the reader has seen some of the page, and make the close button large and easy to find with a keyboard.</p>
+      <h2>4. Walls of text</h2>
+      <p>Paragraphs that run for twenty lines without a break are hard to follow. Short paragraphs, clear headings and lists help readers scan, and help readers with dyslexia keep their place on the line.</p>
+      <h2>5. Lines that never end</h2>
+      <p>On a wide monitor, a line of text can stretch to two hundred characters. The eye has to travel too far to find the start of the next line. Between fifty and ninety characters per line is comfortable for most readers.</p>
+    </div>
+  </div>
+  <aside class="pb-element right">
+    <div class="pb-element portfolio"><h3>Review our portfolio</h3><p>Check out the sites we have built for hundreds of clients.</p><a href="#">See our work</a></div>
+  </aside>
+</div>
+<section class="pb-element related">
+  <div class="pb-element card"><strong>Custom vs template</strong></div>
+  <div class="pb-element card"><strong>Managed vs cheap hosting</strong></div>
+  <div class="pb-element card"><strong>SEO vs AI visibility</strong></div>
+</section>
+<footer class="pb-element">© Northwind Studio</footer>
+</body>
+</html>

@@ -221,6 +221,7 @@ export const MeasureResultSchema = z.object({
   report: InspectReportSchema,
   mainText: z.number().min(0),
   hiddenText: z.number().min(0),
+  pageText: z.number().min(0).default(0),
   protectedVisible: z.number().min(0),
 });
 

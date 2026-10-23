@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { registerOperation, type Operation } from "../shared/registry";
 import { motionOperations } from "./motionOps";
+import { findContentRegion } from "./domUtils";
 import { setStyleEntry } from "./styleEntry";
 import type { FocusPrefs, MotionPrefs } from "../shared/settings";
 
@@ -25,21 +26,43 @@ function mark(elements: Iterable<Element>, attribute: string, token: string): Ar
 }
 function restore(attribute: string, marked: Array<{ element: Element; prior: string | null }>): void { marked.forEach(({ element, prior }) => { if (prior === null) element.removeAttribute(attribute); else element.setAttribute(attribute, prior); }); }
 
+/** Beside the main content (a sidebar or rail), not above or below it in the same column. */
+function beside(element: Element, main: Element): boolean {
+  const box = element.getBoundingClientRect();
+  const reading = main.getBoundingClientRect();
+  // Without layout (no sizes at all), judge by structure alone.
+  if (box.width === 0 && reading.width === 0) return true;
+  return box.right <= reading.left + 4 || box.left >= reading.right - 4;
+}
+
+/** The page title is content: never dimmed or collapsed with the clutter around it. */
+const holdsTitle = (element: Element) => element.matches("h1") || element.querySelector("h1") !== null;
+
+/** Blocks beside the main content, from its own siblings up to the page's top level. */
+function besideMain(main: Element, root: Document): Element[] {
+  const found: Element[] = [];
+  for (let child: Element = main, parent = main.parentElement; parent; child = parent, parent = parent.parentElement) {
+    for (const sibling of Array.from(parent.children)) {
+      if (sibling !== child && beside(sibling, main) && isSafeHeuristicCandidate(sibling) && !holdsTitle(sibling)) found.push(sibling);
+    }
+    if (parent === root.body) break;
+  }
+  return found;
+}
+
 /** Conservative structural candidates, including sidebars whose class names are unknown. */
 export function sidebarCandidates(root: Document = document): Element[] {
-  const main = root.querySelector("main, article, [role='main']");
+  const main = findContentRegion(root);
   const known = Array.from(root.querySelectorAll(SIDEBAR_SELECTOR));
   if (!main) return known.filter(isSafeHeuristicCandidate);
-  const siblings = Array.from(main.parentElement?.children ?? []).filter((element) => element !== main && isSafeHeuristicCandidate(element));
-  return [...new Set([...known, ...siblings])].filter((element) => isSafeHeuristicCandidate(element) && !element.contains(main));
+  return [...new Set([...known, ...besideMain(main, root)])].filter((element) => isSafeHeuristicCandidate(element) && !element.contains(main) && !holdsTitle(element));
 }
 
 function nonReadingCandidates(root: Document = document): Element[] {
-  const main = root.querySelector("main, article, [role='main']");
+  const main = findContentRegion(root);
   if (!main) return sidebarCandidates(root);
-  const directSiblings = Array.from(main.parentElement?.children ?? []).filter((element) => element !== main && isSafeHeuristicCandidate(element));
-  const landmarks = Array.from(root.querySelectorAll("header, footer, aside, [role='complementary']")).filter((element) => isSafeHeuristicCandidate(element) && !element.contains(main));
-  return [...new Set([...directSiblings, ...landmarks])];
+  const landmarks = Array.from(root.querySelectorAll("header, footer, aside, [role='complementary']")).filter((element) => isSafeHeuristicCandidate(element) && !element.contains(main) && !holdsTitle(element));
+  return [...new Set([...besideMain(main, root), ...landmarks])];
 }
 
 function selectedCss(selectors: string[], declarations = "display: none !important;"): string | null {

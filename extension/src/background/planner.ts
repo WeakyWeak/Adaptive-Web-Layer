@@ -83,11 +83,13 @@ ${AI_FIELDS.map((field) => fieldLine(field.key)).join("\n")}
 6. Keep "reasons" short: one per change.
 7. "elements" hides, dims or highlights page blocks by their id from the BLOCKS list in <page_data>. Use it only when the user asks to hide, remove, clean up, dim or highlight parts of the page; otherwise leave all three lists empty.
    - Clutter worth hiding: cookie or consent banners, newsletter or subscribe pop-ups, promo or ad bars, "recommended" or "related" rails, share bars. Hide comments only if the user mentions comments.
-   - Never hide a block marked MAIN CONTENT, the site navigation or a table of contents, and keep anything the user asks to keep.
+   - Never hide or dim a block marked MAIN CONTENT or PAGE TITLE, one that holds a large share of the page's text, the site navigation or a table of contents, and keep anything the user asks to keep.
+   - Dim only clutter you would otherwise hide; never dim headings, the article or its parts.
    - For a pop-up, prefer its outermost block (the overlay) over the blocks inside it.
    - Class names can be meaningless; judge a block by its text, position, size, links and ad signals too.
 8. "expand" (when offered) lists up to ${MAX_EXPAND_PER_ROUND} block ids marked "N parts" whose parts you need to see before deciding; leave it empty when the BLOCKS list is enough. Only use it for requests about parts of the page.
-9. MEASURED PROBLEMS (when given) were measured on the page by code; fix the ones a setting can fix.`;
+9. MEASURED PROBLEMS (when given) were measured on the page by code; fix the ones a setting can fix, and change no other setting.
+10. Change maxContentWidth only when the user asks about width or the measured problems include long-lines.`;
 }
 
 export function buildUserPrompt(context: PlanContext, errors: string[] = []): string {

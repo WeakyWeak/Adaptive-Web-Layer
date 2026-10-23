@@ -18,6 +18,13 @@ export const MAX_HIDDEN = 15;
  */
 export const MAX_HIDDEN_AREA = 60;
 export const MAX_BLOCKS = 60;
+/**
+ * A block holding this share of the page's prose (in %) is content, not
+ * clutter: it is never hidden or dimmed, even when the main-content finder
+ * missed it. Comment threads are the exception (some readers hide them).
+ */
+export const MAX_CLUTTER_TEXT_SHARE = 35;
+const COMMENTS = /comment|discussion|disqus|replies/i;
 
 export const ProtectKindSchema = z.enum(["navigation", "form", "alert", "dialog"]);
 export type ProtectKind = z.infer<typeof ProtectKindSchema>;
@@ -51,6 +58,10 @@ export const SnapshotBlockSchema = z.object({
   children: z.number().int().min(0).max(99).default(0),
   /** Measured ad signals: a cross-site frame, sponsored links, ad-slot markup. */
   ad: z.boolean().default(false),
+  /** Share of the page's prose (paragraphs, list items) inside the block, in %. */
+  textShare: z.number().min(0).max(100).default(0),
+  /** Holds the page's title heading (its h1). */
+  title: z.boolean().default(false),
   /** Id of the nearest enclosing block, if any. */
   within: BlockIdSchema.optional(),
 });
@@ -129,6 +140,8 @@ export function describeBlockForPrompt(block: SnapshotBlock): string {
     block.ad ? "· ad signals" : "",
     block.within ? `· inside ${block.within}` : "",
     block.main ? "· MAIN CONTENT" : block.inMain ? "· in the article" : "",
+    block.title ? "· PAGE TITLE" : "",
+    block.textShare >= 10 ? `· ${block.textShare}% of the page's text` : "",
     block.children >= 2 ? `· ${block.children} parts` : "",
   ];
   return parts.filter(Boolean).join(" ");
@@ -163,6 +176,10 @@ export function validateElements(elements: Elements | undefined, snapshot: DomSn
       if (seen.has(id)) { reject("Listed more than once."); continue; }
       seen.add(id);
       if (block.main && action !== "highlight") { reject("This is the main content, or contains it."); continue; }
+      if (action !== "highlight" && !block.fixed) {
+        if (block.title) { reject("This holds the page title."); continue; }
+        if (block.textShare >= MAX_CLUTTER_TEXT_SHARE && !COMMENTS.test(block.hints)) { reject(`This holds ${block.textShare}% of the page's text: that is content, not clutter.`); continue; }
+      }
       if (action === "hide") {
         if (hidden.size >= MAX_HIDDEN) { reject(`At most ${MAX_HIDDEN} elements can be hidden at once.`); continue; }
         // Overlays, and blocks inside one that is already hidden, add no area.

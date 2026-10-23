@@ -4,6 +4,7 @@
 
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { blockAtRegion, buildDomSnapshot, expandBlocks, resolveSnapshotId, sameKindSelector, viewportMarks } from "../content/domSnapshot";
+import { forgetContentRegion } from "../content/domUtils";
 import { persistentSelector } from "../content/elementPicker";
 import { clearPreviewMarks, previewSelectors } from "../content/previewMarks";
 import { DomSnapshotSchema } from "../shared/plan";
@@ -43,6 +44,8 @@ beforeAll(() => {
 beforeEach(() => {
   document.body.innerHTML = PAGE;
   clearPreviewMarks();
+  // Each test is a new page.
+  forgetContentRegion();
 });
 
 const blockFor = (snapshot: ReturnType<typeof buildDomSnapshot>, selector: string) =>
@@ -187,6 +190,9 @@ describe("P10 open page model", () => {
     expect(blockFor(snapshot, ".k2v")).toMatchObject({ inMain: true });
     expect(blockFor(snapshot, ".r8t")).toMatchObject({ ad: true });
     expect(blockFor(snapshot, ".lay-0x")).toMatchObject({ main: true, children: 3 });
+    // How much of the page's prose each block holds, and which holds the title: the validator's safety net.
+    expect(blockFor(snapshot, "main")).toMatchObject({ title: true, textShare: 91 });
+    expect(blockFor(snapshot, ".x9a3f")).toMatchObject({ title: false, textShare: 9 });
   });
 
   it("opens a block's parts on request (drill-down), bounded", () => {

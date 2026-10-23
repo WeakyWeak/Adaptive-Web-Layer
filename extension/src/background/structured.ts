@@ -4,6 +4,7 @@
 
 import type { z } from "zod";
 import type { JsonSchema } from "../shared/jsonSchema";
+import type { ImageInput } from "../shared/llmProvider";
 import { ProviderError } from "../shared/plan";
 import type { StructuredGenerator } from "./planner";
 
@@ -16,6 +17,8 @@ export interface ValidatedRequest<T extends z.ZodTypeAny> {
   schema: T;
   jsonSchema: JsonSchema;
   maxTokens: number;
+  /** Screenshots for vision models (the P10 reviewer). */
+  images?: ImageInput[];
 }
 
 export async function runValidated<T extends z.ZodTypeAny>(
@@ -31,6 +34,7 @@ export async function runValidated<T extends z.ZodTypeAny>(
         systemPrompt: request.systemPrompt,
         userPrompt: request.userPrompt(errors),
         schema: request.jsonSchema,
+        images: request.images,
         signal: options.signal,
         maxTokens: request.maxTokens,
         onProgress: options.onProgress,

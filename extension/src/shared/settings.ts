@@ -147,6 +147,10 @@ export const PrivacySettingsSchema = z.object({
   cloudTextSites: z.record(z.boolean()).default({}),
   /** P10: sites the cloud has reviewed at least once (for the "first-per-site" review policy). */
   reviewedSites: z.array(z.string().max(253)).max(500).default([]),
+  /** Send screenshots of the visible page with cloud reviews (when Chrome allows a capture). */
+  reviewScreenshots: z.boolean().default(true),
+  /** The reader granted Chrome's every-site permission so reviews can include screenshots anywhere. */
+  screenshotsEverySite: z.boolean().default(false),
 });
 export type PrivacySettings = z.infer<typeof PrivacySettingsSchema>;
 

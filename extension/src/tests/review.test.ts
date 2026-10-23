@@ -15,6 +15,8 @@ import {
   draftIsUnsure,
   draftItems,
   draftLedger,
+  guardWidth,
+  minContentWidth,
   regressions,
   ReviewReplySchema,
   reviewJsonSchema,
@@ -25,7 +27,7 @@ import { defaultSettings } from "../shared/settings";
 import { currentAiValues } from "../shared/sitePatch";
 
 const block = (id: string, extra: Partial<SnapshotBlock> = {}): SnapshotBlock => ({
-  id, tag: "div", hints: "", text: "", box: [0, 0, 100, 10], fixed: false, area: 3, linkDensity: 0, main: false, inMain: false, children: 0, ad: false, ...extra,
+  id, tag: "div", hints: "", text: "", box: [0, 0, 100, 10], fixed: false, area: 3, linkDensity: 0, main: false, inMain: false, children: 0, ad: false, textShare: 0, title: false, ...extra,
 });
 
 // Mirrors fixtures/obfuscated-clutter.html: random class names everywhere.
@@ -121,26 +123,49 @@ describe("what the reviewer sees", () => {
 });
 
 describe("regressions", () => {
-  const before: Measures = { score: 70, mainText: 1000, hiddenText: 0, protectedVisible: 3, overflow: 0, overlap: 0, clipped: 0 };
+  const before: Measures = { score: 70, mainText: 1000, hiddenText: 0, pageText: 3000, protectedVisible: 3, overflow: 0, overlap: 0, clipped: 0, problems: [] };
   it("finds nothing when the page is not worse", () => {
     expect(regressions(before, { ...before, score: 80 })).toEqual([]);
   });
   it("flags a lower score, lost text, new overflow and a vanished protected element", () => {
-    const reasons = regressions(before, { score: 65, mainText: 900, hiddenText: 0, protectedVisible: 2, overflow: 1, overlap: 0, clipped: 0 });
+    const reasons = regressions(before, { ...before, score: 65, mainText: 900, protectedVisible: 2, overflow: 1 });
     expect(reasons).toHaveLength(4);
     expect(reasons[0]).toMatch(/fell from 70 to 65/);
   });
   it("does not count text hidden on purpose, up to a quarter of the article", () => {
     expect(regressions(before, { ...before, mainText: 850, hiddenText: 150 })).toEqual([]);
-    expect(regressions(before, { ...before, mainText: 600, hiddenText: 400 })).toEqual([expect.stringMatching(/hide 40% of the main text/)]);
+    expect(regressions(before, { ...before, mainText: 600, hiddenText: 400 })).toEqual([expect.stringMatching(/hide or dim 40% of the main text/)]);
   });
   it("allows protected elements the user agreed to hide", () => {
     expect(regressions(before, { ...before, protectedVisible: 2 }, 1)).toEqual([]);
   });
+  it("flags hiding most of the page's text, even when the article was not found", () => {
+    // The main region the code measured is unchanged, but the real article went.
+    expect(regressions(before, { ...before, pageText: 600 })).toEqual([expect.stringMatching(/80% of the page's text would disappear/)]);
+    expect(regressions(before, { ...before, pageText: 2000 })).toEqual([]);
+  });
+});
+
+describe("guardWidth", () => {
+  const facts = { asked: false, hasMain: true, longLines: true, fontSize: 18 };
+  it("keeps a width change for measured long lines, never narrower than ~66 characters", () => {
+    expect(guardWidth({ maxContentWidth: 760, fontSize: 18 }, facts)).toEqual({ changes: { maxContentWidth: 760, fontSize: 18 } });
+    const narrow = guardWidth({ maxContentWidth: 450 }, facts);
+    expect(narrow.changes.maxContentWidth).toBe(minContentWidth(18));
+    expect(minContentWidth(18)).toBe(600);
+    expect(narrow.widened).toMatch(/66 characters/);
+  });
+  it("drops an unasked width change when lines are fine, or when the page has no article", () => {
+    expect(guardWidth({ maxContentWidth: 1000, lineHeight: 1.7 }, { ...facts, longLines: false })).toMatchObject({ changes: { lineHeight: 1.7 }, removed: expect.stringMatching(/comfortable length/) });
+    expect(guardWidth({ maxContentWidth: 1000 }, { ...facts, hasMain: false })).toMatchObject({ changes: {}, removed: expect.stringMatching(/No article/) });
+  });
+  it("keeps a width the reader asked for", () => {
+    expect(guardWidth({ maxContentWidth: 900 }, { ...facts, asked: true, longLines: false, hasMain: false }).changes).toEqual({ maxContentWidth: 900 });
+  });
 });
 
 describe("draftIsUnsure", () => {
-  const measures = (score: number): Measures => ({ score, mainText: 1, hiddenText: 0, protectedVisible: 0, overflow: 0, overlap: 0, clipped: 0 });
+  const measures = (score: number): Measures => ({ score, mainText: 1, hiddenText: 0, pageText: 1, protectedVisible: 0, overflow: 0, overlap: 0, clipped: 0, problems: [] });
   it("is unsure on low confidence, no improvement, or many refused items", () => {
     expect(draftIsUnsure({ confidence: 0.4, requested: 0, refused: 0 })).toBe(true);
     expect(draftIsUnsure({ confidence: 0.9, before: measures(70), draft: measures(70), requested: 0, refused: 0 })).toBe(true);

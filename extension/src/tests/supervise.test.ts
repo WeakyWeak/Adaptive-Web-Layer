@@ -7,14 +7,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { requestReview, runAiJob } from "../background/aiJobs";
 import { cancelJob } from "../background/jobs";
 import { readJob } from "../shared/aiJob";
-import { CLEAN_PAGE_REQUEST, type SnapshotBlock } from "../shared/elementPlan";
+import { CLEAN_PAGE_REQUEST, FIX_PAGE_REQUEST, type SnapshotBlock } from "../shared/elementPlan";
 import type { Finding } from "../shared/inspector";
 import { defaultSettings, type Settings } from "../shared/settings";
 import { loadSettings, saveSettings } from "../shared/storage";
 
 const TAB = 9;
 const PROXY = "http://127.0.0.1:8787";
-const block = (id: string, extra: Partial<SnapshotBlock> = {}): SnapshotBlock => ({ id, tag: "div", hints: "", text: "", box: [0, 0, 100, 10], fixed: false, area: 3, linkDensity: 0, main: false, inMain: false, children: 0, ad: false, ...extra });
+const block = (id: string, extra: Partial<SnapshotBlock> = {}): SnapshotBlock => ({ id, tag: "div", hints: "", text: "", box: [0, 0, 100, 10], fixed: false, area: 3, linkDensity: 0, main: false, inMain: false, children: 0, ad: false, textShare: 0, title: false, ...extra });
 const snapshot = {
   url: "https://example.com/a", title: "A", contentRegion: "main", headings: [], landmarks: [], textBlocks: [], imageCnt: 0, tableCnt: 0, codeBlockCnt: 0, tokenEstimate: 10,
   blocks: [
@@ -31,6 +31,9 @@ let review: Record<string, unknown> | { error: string };
 /** Resolves when the proxy has been asked, so a test can cancel mid-review. */
 let proxyAsked: () => void;
 let proxyCalls: string[];
+let proxyBodies: Array<{ schema?: unknown; images?: unknown[] }>;
+/** The proxy refuses this many review requests outright (HTTP 400, as Gemini does for a schema it cannot serve). */
+let refuse: number;
 let localCalls: number;
 let preview: { changes: Record<string, unknown> | null; elements?: { hide: string[] } } = { changes: null };
 let captureVisibleTab: ReturnType<typeof vi.fn>;
@@ -50,7 +53,7 @@ function measure() {
   const changes = preview.changes ?? {};
   const findings: Finding[] = [];
   if (Number(changes.fontSize ?? 14) < 18) findings.push({ id: "small-text-1", type: "small-text", severity: "high", confidence: "high", title: "t", detail: "d", evidence: { px: 14 }, suggestedFix: { changes: { fontSize: 18 }, hide: [], description: "Text 18px" } });
-  if (changes.maxContentWidth === 400) findings.push({ id: "horizontal-overflow-1", type: "horizontal-overflow", severity: "high", confidence: "high", title: "t", detail: "d", evidence: { px: 300 } });
+  if (changes.maxContentWidth === 700) findings.push({ id: "horizontal-overflow-1", type: "horizontal-overflow", severity: "high", confidence: "high", title: "t", detail: "d", evidence: { px: 300 } });
   return { type: "MEASURE_RESULT", report: { findings, scanned: 100, capped: false, durationMs: 5 }, mainText: 1000, hiddenText: 0, protectedVisible: 2 };
 }
 
@@ -58,6 +61,8 @@ const stream = (lines: string[]) => new Response(lines.join("\n") + "\n", { stat
 
 function installFakes(): void {
   proxyCalls = [];
+  proxyBodies = [];
+  refuse = 0;
   localCalls = 0;
   preview = { changes: null };
   tabActive = false;
@@ -81,7 +86,12 @@ function installFakes(): void {
   vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
     if (url.startsWith(PROXY)) {
       proxyCalls.push(url);
+      proxyBodies.push(JSON.parse(String(init?.body ?? "{}")));
       proxyAsked();
+      if (refuse > 0) {
+        refuse--;
+        return stream([JSON.stringify({ type: "ping" }), JSON.stringify({ type: "error", status: 400, code: "upstream_error", message: "Request contains an invalid argument." })]);
+      }
       if ("error" in review) {
         if (review.error === "hang") {
           return await new Promise<Response>((_, reject) => init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError"))));
@@ -152,6 +162,18 @@ describe("supervised fix", () => {
     expect(job.supervision?.ledger.find((entry) => entry.ref === "s40")?.reason).toMatch(/Seen in the screenshot: a chat bubble/);
   });
 
+  it("retries a refused review with plain id lists instead of failing", async () => {
+    await useSettings((settings) => settings);
+    refuse = 1;
+    await runAiJob(TAB, CLEAN_PAGE_REQUEST, "clean");
+    const job = (await readJob(TAB))!;
+    expect(job.supervision?.review).toBe("reviewed");
+    expect(proxyCalls).toHaveLength(2);
+    const enums = (body: { schema?: unknown }) => JSON.stringify(body.schema).includes('"enum":["s1"');
+    expect(enums(proxyBodies[0])).toBe(true);
+    expect(enums(proxyBodies[1])).toBe(false);
+  });
+
   it("never lets the reviewer hide the main content", async () => {
     await useSettings((settings) => settings);
     review = reviewReply({ drop: [], add: { changes: {}, elements: { hide: ["s5"], dim: [], highlight: [] } } });
@@ -163,13 +185,34 @@ describe("supervised fix", () => {
 
   it("auto-reverts a change that makes the page measurably worse, and keeps the rest", async () => {
     await useSettings((settings) => ({ ...settings, ai: { ...settings.ai, mode: "local" } }));
-    plan = draftPlan({ changes: { fontSize: 20, maxContentWidth: 400 }, elements: { hide: [], dim: [], highlight: [] } });
+    plan = draftPlan({ changes: { fontSize: 20, maxContentWidth: 700 }, elements: { hide: [], dim: [], highlight: [] } });
     await runAiJob(TAB, "bigger text and narrower lines");
     const job = (await readJob(TAB))!;
     expect(job.changes).toEqual({ fontSize: 20 });
     expect(job.supervision?.ledger.find((entry) => entry.ref === "maxContentWidth")).toMatchObject({ status: "reverted", reason: expect.stringMatching(/sideways/) });
     expect(job.supervision?.reverted).toHaveLength(1);
     expect(preview.changes).toEqual({ fontSize: 20 });
+  });
+
+  it("fix: keeps only settings a measured problem calls for", async () => {
+    await useSettings((settings) => ({ ...settings, ai: { ...settings.ai, mode: "local" } }));
+    plan = draftPlan({ changes: { fontSize: 20, theme: "dark", letterSpacing: 1, reduceMotion: true }, elements: { hide: [], dim: [], highlight: [] } });
+    await runAiJob(TAB, FIX_PAGE_REQUEST, "fix");
+    const job = (await readJob(TAB))!;
+    // Small text was measured; nothing measured calls for a dark theme or wider letter spacing.
+    expect(job.changes).toEqual({ fontSize: 20, reduceMotion: true });
+    for (const key of ["theme", "letterSpacing"]) {
+      expect(job.supervision?.ledger.find((entry) => entry.ref === key)).toMatchObject({ status: "reverted", reason: expect.stringMatching(/no problem measured on this page calls for it/) });
+    }
+  });
+
+  it("undoes a width change nobody asked for when the lines are already a comfortable length", async () => {
+    await useSettings((settings) => ({ ...settings, ai: { ...settings.ai, mode: "local" } }));
+    plan = draftPlan({ changes: { fontSize: 18, maxContentWidth: 1000 }, elements: { hide: [], dim: [], highlight: [] } });
+    await runAiJob(TAB, "make this easier to read");
+    const job = (await readJob(TAB))!;
+    expect(job.changes).toEqual({ fontSize: 18 });
+    expect(job.supervision?.ledger.find((entry) => entry.ref === "maxContentWidth")).toMatchObject({ status: "reverted", reason: expect.stringMatching(/code rule: The lines are already a comfortable length/) });
   });
 
   it("local mode: measured, never reviewed, and nothing reaches the proxy or the screenshot API", async () => {
@@ -245,7 +288,9 @@ describe("supervised fix", () => {
     expect(body.messages[1].content).toMatch(/MEASURED PROBLEMS:\n- small-text \(high\)/);
     const job = (await readJob(TAB))!;
     expect(job.kind).toBe("fix");
-    expect(job.changes).toEqual({ lineHeight: 1.8, fontSize: 18 });
+    // Only small text was measured: the inspector's text-size fix is added; the unmeasured line height is undone.
+    expect(job.changes).toEqual({ fontSize: 18 });
     expect(job.supervision?.ledger.find((entry) => entry.ref === "fontSize")).toMatchObject({ status: "kept", source: "inspector" });
+    expect(job.supervision?.ledger.find((entry) => entry.ref === "lineHeight")).toMatchObject({ status: "reverted" });
   });
 });

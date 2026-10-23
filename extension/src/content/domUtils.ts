@@ -11,69 +11,108 @@ export const PROTECTED_SELECTOR = PROTECTED_ELEMENTS.join(", ");
 export const PROSE_SELECTOR = "p, li, blockquote, h1, h2, h3, h4, h5, h6, td, th, label, figcaption";
 
 // ─── Content-region detection ─────────────────────────────────────────────────
+// One finder for the whole extension (typography, measurements, the AI
+// snapshot): the element that holds most of the page's prose. Page builders
+// often have no <main>/<article> and share class names between header and
+// article, so the result is always a selector that matches exactly one element.
+const PROSE_TEXT = "p, li, blockquote, dd, pre, td";
+/** Less prose than this (characters) and the page is not an article (a gallery, an app). */
+const MIN_PROSE = 400;
+/** The main region holds at least this share of the page's prose. */
+const MAIN_SHARE = 0.6;
+/** Marks the detected region when it has no unique id or tag. */
+export const MAIN_MARK = "data-awl-main";
+
+const rendered = (el: Element): boolean => typeof (el as HTMLElement).checkVisibility !== "function" || (el as HTMLElement).checkVisibility();
+
+/** Characters of link text inside `el` (menus and link lists are not prose). */
+function linkText(el: Element): number {
+  return Array.from(el.querySelectorAll("a")).reduce((sum, link) => sum + (link.textContent ?? "").trim().length, 0);
+}
+
+/** Characters of prose under each ancestor of every paragraph-like element (each counted once; mostly-link items skipped). */
+export function proseTotals(root: Element): Map<Element, number> {
+  const totals = new Map<Element, number>();
+  for (const paragraph of Array.from(root.querySelectorAll(PROSE_TEXT)).slice(0, 5000)) {
+    if (paragraph.parentElement?.closest(PROSE_TEXT) || !rendered(paragraph)) continue;
+    const length = (paragraph.textContent ?? "").replace(/\s+/g, " ").trim().length;
+    if (length < 20 || linkText(paragraph) >= length / 2) continue;
+    for (let el: Element | null = paragraph; el && el !== root.parentElement; el = el.parentElement) totals.set(el, (totals.get(el) ?? 0) + length);
+  }
+  return totals;
+}
+
+/** The smallest element holding most of the page's prose; null when the page has little prose. */
+function proseRegion(body: Element): Element | null {
+  const totals = proseTotals(body);
+  const total = totals.get(body) ?? 0;
+  if (total < MIN_PROSE) return null;
+  let current = body;
+  for (;;) {
+    const next = Array.from(current.children).find((child) => (totals.get(child) ?? 0) >= total * MAIN_SHARE);
+    // Stop above a single paragraph or list item: the region is what holds them.
+    if (!next || next.matches(PROSE_TEXT)) break;
+    current = next;
+  }
+  return current === body ? null : current;
+}
+
+const textOf = (el: Element) => (el.textContent ?? "").length;
+
 /**
- * Find the main content container of the page using a set of heuristics,
- * in priority order:
- *  1. <main> element
- *  2. <article> element
- *  3. [role="main"] element
- *  4. Text-density heuristic (highest ratio of text to element area)
- *
- * Returns a CSS selector string for the content region.
- * Falls back to "body" so typography always has a target.
+ * The main content element, in priority order: a <main>/[role=main] that holds
+ * the prose, the <article> that holds it, the prose region itself; on pages
+ * with little prose, the <main> or the largest <article>. Null: the whole page.
  */
+export function findContentRegion(root: Document = document): Element | null {
+  const body = root.body;
+  if (!body) return null;
+  const prose = proseRegion(body);
+  const mains = Array.from(root.querySelectorAll("main, [role='main']")).filter(rendered);
+  const main = mains.find((el) => prose ? el.contains(prose) : textOf(el) > 0);
+  if (main) return main;
+  if (prose) return prose.closest("article") ?? prose;
+  const articles = Array.from(root.querySelectorAll("article")).filter(rendered).sort((a, b) => textOf(b) - textOf(a));
+  return articles[0] ?? null;
+}
+
+/** A selector that matches `el` and nothing else. */
+function uniqueSelector(el: Element): string {
+  const tag = el.tagName.toLowerCase();
+  if ((tag === "main" || tag === "article") && document.querySelectorAll(tag).length === 1) return tag;
+  if (el.id && document.querySelectorAll(`#${CSS.escape(el.id)}`).length === 1) return `#${CSS.escape(el.id)}`;
+  document.querySelectorAll(`[${MAIN_MARK}]`).forEach((other) => { if (other !== el) other.removeAttribute(MAIN_MARK); });
+  el.setAttribute(MAIN_MARK, "");
+  return `[${MAIN_MARK}]`;
+}
+
+/** Selector for the main content region; "body" when there is none. */
 export function detectContentRegion(): string {
-  // 1. Semantic landmarks
-  if (document.querySelector("main")) return "main";
-  if (document.querySelector("article")) return "article";
-  if (document.querySelector("[role='main']")) return "[role='main']";
-
-  // 2. Text-density heuristic
-  const candidates = Array.from(
-    document.querySelectorAll("div, section, aside, .content, #content, .main, #main")
-  ) as HTMLElement[];
-
-  let best: HTMLElement | null = null;
-  let bestScore = 0;
-
-  for (const el of candidates) {
-    const text = el.innerText?.trim() ?? "";
-    if (text.length < 200) continue; // skip thin elements
-
-    const rect = el.getBoundingClientRect();
-    const area = rect.width * rect.height;
-    if (area < 10000) continue; // skip tiny/invisible elements
-
-    // score = text chars / area (higher = denser text)
-    const score = (text.length * text.length) / area;
-    if (score > bestScore) {
-      bestScore = score;
-      best = el;
-    }
-  }
-
-  if (best) {
-    // Build a stable selector: prefer id, else try a class
-    if (best.id) return `#${CSS.escape(best.id)}`;
-    if (best.className) {
-      const first = best.className.split(/\s+/)[0];
-      if (first) return `.${CSS.escape(first)}`;
-    }
-    return best.tagName.toLowerCase();
-  }
-
-  return "body";
+  const region = findContentRegion();
+  return region ? uniqueSelector(region) : "body";
 }
 
 // ─── Content region selector (cached per page) ────────────────────────────────
 let _cachedRegion: string | null = null;
+let _detectedAt = 0;
+/** With no region found yet (still loading, content arriving later), look again at most this often. */
+const REDETECT_MS = 1000;
 
 export function getContentRegionSelector(applyToWholePage: boolean): string {
   if (applyToWholePage) return "body";
-  if (!_cachedRegion) {
+  // Look again when nothing was found yet, or when the region left the DOM (single-page apps).
+  const stale = !_cachedRegion
+    || (_cachedRegion === "body" ? Date.now() - _detectedAt > REDETECT_MS : !document.querySelector(_cachedRegion));
+  if (stale) {
     _cachedRegion = detectContentRegion();
+    _detectedAt = Date.now();
   }
-  return _cachedRegion;
+  return _cachedRegion!;
+}
+
+/** Forget the region (a single-page app navigated); the next call finds it again. */
+export function forgetContentRegion(): void {
+  _cachedRegion = null;
 }
 
 // ─── Build CSS selector for prose inside content region ──────────────────────

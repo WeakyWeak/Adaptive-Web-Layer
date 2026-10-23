@@ -5,6 +5,7 @@ import { PROTECT_LABEL, type ElementAction } from "../../shared/elementPlan";
 import type { LedgerEntry, LedgerSource } from "../../shared/review";
 import type { Settings } from "../../shared/settings";
 import ConsentCard from "../ConsentCard";
+import { ScreenshotHint } from "../ScreenshotAccess";
 import { command, useSessionRecord } from "../hooks";
 
 // P10: the supervised fix, as the reader sees it: draft → measured →
@@ -116,6 +117,7 @@ export default function SupervisionView({ job, settings, onError }: { job: AiJob
       {editable && pending > 0 && <p className="muted small">{pending} item{pending === 1 ? " needs" : "s need"} your OK before {pending === 1 ? "it is" : "they are"} hidden. Hover an item to see it on the page.</p>}
       {supervision.reverted.length > 0 && <p className="muted small">Code undid {supervision.reverted.length} change{supervision.reverted.length === 1 ? "" : "s"} that made the page measurably worse.</p>}
       {supervision.shots && <Shots tabId={job.tabId} />}
+      {supervision.review === "reviewed" && !supervision.shots && <ScreenshotHint settings={settings} />}
       {editable && supervision.needsConsent && (
         <ConsentCard hostname={job.hostname} backend={settings.ai.cloudBackend} onDecided={(decision) => { if (decision !== "deny") void review(); }} />
       )}

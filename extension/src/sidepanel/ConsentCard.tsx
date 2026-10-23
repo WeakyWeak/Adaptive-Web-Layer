@@ -34,22 +34,21 @@ export default function ConsentCard({ hostname, backend, onDecided }: {
   return (
     <section className="consent" aria-label="Cloud consent">
       <h3>Use cloud AI on {hostname}?</h3>
-      <p>
-        Page commands send your command, your current reading settings and a short summary of the page
-        (title, headings, counts of images/tables/code, and up to 60 page blocks such as banners
-        and sidebars with their class names and first ~80 characters of text).
-        TL;DR, glossary and selection actions send the article's main text or the text you selected, with code,
-        links, emails and identifiers replaced by placeholders.
-        Reviews of the local AI's draft send the draft, code measurements, the same page blocks and two screenshots
-        of the visible part of the page (before and after, with numbered boxes).
-        It goes to your local proxy and then to {PROVIDER_NAME[backend]}, or to Sarvam for translation.
-        Form values are never sent.
-      </p>
-      <label className="row small">
+      <p>Nothing has left your computer yet. If you allow it, your local proxy sends this to {PROVIDER_NAME[backend]} (or to Sarvam for translation):</p>
+      <ul className="consent-list">
+        <li><strong>Page commands:</strong> your command, your reading settings and an outline of the page (title, headings, up to 60 page parts with their class names and first ~80 characters).</li>
+        <li><strong>Reviews of the local AI's draft:</strong> the draft, code measurements, the same outline, and two screenshots of the visible part of the page (before and after).</li>
+        <li><strong>TL;DR, glossary, selection tools:</strong> the article text or your selection, with code, links, emails and identifiers replaced.</li>
+        <li>Never what you typed into forms.</li>
+      </ul>
+      <label className="consent-option">
         <input type="checkbox" checked={text} onChange={(event) => setText(event.target.checked)} />
-        Also let the reviewer read page text excerpts, to check that simplified text kept every fact (off by default)
+        <span>
+          <strong>Also share page text with the reviewer</strong>
+          <span className="muted small">Optional. Lets the cloud check that “Explain simply” kept every number, name and “not”. Without it, only the code checks run.</span>
+        </span>
       </label>
-      <p>{BACKEND_NOTICE[backend]} {SARVAM_NOTICE}</p>
+      <p className="muted small">{BACKEND_NOTICE[backend]} {SARVAM_NOTICE}</p>
       <div className="row">
         <button className="primary" disabled={saving} onClick={() => decide("allow-once")}>Allow once</button>
         <button disabled={saving} onClick={() => decide("allow-site")}>Allow for this site</button>

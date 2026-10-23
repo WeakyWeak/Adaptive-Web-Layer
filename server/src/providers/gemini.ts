@@ -34,7 +34,15 @@ function body(input: AnalyzeRequest, field: SchemaField): Record<string, unknown
 interface GeminiReply {
   candidates?: Array<{ content?: { parts?: Array<{ text?: string; thought?: boolean }> }; finishReason?: string }>;
   promptFeedback?: { blockReason?: string };
-  error?: { message?: string };
+  error?: { message?: string; details?: Array<{ fieldViolations?: Array<{ field?: string; description?: string }> }> };
+}
+
+/** Gemini's own error text plus the first field it objected to ("Request contains an invalid argument" alone says little). */
+export function geminiErrorMessage(payload: GeminiReply | null, status: number): string {
+  const message = payload?.error?.message ?? `Gemini returned HTTP ${status}.`;
+  const violation = payload?.error?.details?.flatMap((detail) => detail.fieldViolations ?? [])[0];
+  if (!violation) return message;
+  return `${message} (${[violation.field, violation.description].filter(Boolean).join(": ")})`.slice(0, 400);
 }
 
 async function call(input: AnalyzeRequest, apiKey: string, field: SchemaField): Promise<{ status: number; payload: GeminiReply | null }> {
@@ -89,7 +97,9 @@ export async function analyzeWithGemini(input: AnalyzeRequest, apiKey: string): 
   if (status !== 200) {
     const message = status === 503
       ? `Gemini (${input.model}) is overloaded right now. Try again shortly, or pick a lighter model such as gemini-3.5-flash-lite.`
-      : payload?.error?.message ?? `Gemini returned HTTP ${status}.`;
+      : geminiErrorMessage(payload, status);
+    // Logged without the request body, so a refused request can be diagnosed later.
+    if (status === 400) console.warn(`[proxy] Gemini ${input.model} refused a request (${input.images?.length ?? 0} image(s), schema ${JSON.stringify(input.schema ?? {}).length} chars): ${message}`);
     throw new UpstreamError(status === 429 ? 429 : status >= 500 ? 503 : status, status === 429 ? "rate_limited" : "upstream_error", message);
   }
   if (payload?.promptFeedback?.blockReason) throw new UpstreamError(422, "safety_block", `Gemini blocked the request (${payload.promptFeedback.blockReason}).`);

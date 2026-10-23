@@ -5,7 +5,7 @@
 
 import { MAX_BLOCKS, type ProtectKind, type SnapshotBlock } from "../shared/elementPlan";
 import { type DomSnapshot } from "../shared/plan";
-import { getContentRegionSelector, PROTECTED_SELECTOR } from "./domUtils";
+import { getContentRegionSelector, PROTECTED_SELECTOR, proseTotals } from "./domUtils";
 
 // Stable id → element map, so plans can reference elements without selectors.
 const _snapshotMap = new Map<string, Element>();
@@ -243,6 +243,10 @@ function toBlocks(scores: Map<Element, number>, mainEl: Element | null, budgetTo
   picked.sort((a, b) => b.score - a.score || before(a.el, b.el));
 
   const hasMain = mainEl !== null && mainEl !== body;
+  // How much of the page's prose each block holds: a block with most of it is content, whatever the model thinks.
+  const prose = proseTotals(body);
+  const totalProse = Math.max(prose.get(body) ?? 0, 1);
+  const title = titleHeading(hasMain ? mainEl : null);
   const kept: Array<{ el: Element; block: SnapshotBlock }> = [];
   const kinds = new Set<string>();
   let used = 0;
@@ -271,6 +275,8 @@ function toBlocks(scores: Map<Element, number>, mainEl: Element | null, budgetTo
       children: el === mainEl ? 0 : Math.min(99, blockParts(el, view).length),
       // A wrapper around the article is not an ad because an ad sits next to it.
       ad: !(hasMain && el.contains(mainEl)) && hasAdSignals(el),
+      textShare: Math.min(100, Math.round((prose.get(el) ?? 0) / totalProse * 100)),
+      title: title !== null && el.contains(title),
     };
     if (kind) block.similar = kind.count - 1;
     const cost = estimateTokens(JSON.stringify(block)) + 4;
@@ -291,8 +297,15 @@ function toBlocks(scores: Map<Element, number>, mainEl: Element | null, budgetTo
 }
 
 function mainRegion(applyToWholePage: boolean): Element | null {
-  const region = applyToWholePage ? "body" : detectContentRegion();
+  const region = getContentRegionSelector(applyToWholePage);
   return region === "body" ? null : document.querySelector(region);
+}
+
+/** The page's title heading: the first visible h1, preferring one in the main content. */
+function titleHeading(mainEl: Element | null): Element | null {
+  const visible = (el: Element) => el.getBoundingClientRect().height > 0;
+  const headings = Array.from(document.querySelectorAll("h1")).filter(visible);
+  return headings.find((el) => mainEl?.contains(el)) ?? headings[0] ?? null;
 }
 
 /** P10 drill-down: the visible parts of these blocks, as new candidate blocks. */
@@ -382,9 +395,7 @@ const BLOCK_TOKENS = 2400;
  * Truncates deterministically to stay within the token budget.
  */
 export function buildDomSnapshot(applyToWholePage: boolean): DomSnapshot {
-  const contentRegion = applyToWholePage
-    ? "body"
-    : detectContentRegion();
+  const contentRegion = getContentRegionSelector(applyToWholePage);
 
   // ── Headings ──────────────────────────────────────────────────────────────
   const headingEls = Array.from(
@@ -471,40 +482,4 @@ export function buildDomSnapshot(applyToWholePage: boolean): DomSnapshot {
   snap.tokenEstimate = usedTokens;
 
   return snap;
-}
-
-/** Detect the main content region selector. Re-uses domUtils logic. */
-function detectContentRegion(): string {
-  if (document.querySelector("main")) return "main";
-  if (document.querySelector("article")) return "article";
-  if (document.querySelector("[role='main']")) return "[role='main']";
-
-  const candidates = Array.from(
-    document.querySelectorAll("div, section")
-  ) as HTMLElement[];
-
-  let best: HTMLElement | null = null;
-  let bestScore = 0;
-
-  for (const el of candidates) {
-    const text = el.innerText?.trim() ?? "";
-    if (text.length < 200) continue;
-    const rect = el.getBoundingClientRect();
-    const area = rect.width * rect.height;
-    if (area < 10000) continue;
-    const score = (text.length * text.length) / area;
-    if (score > bestScore) {
-      bestScore = score;
-      best = el;
-    }
-  }
-
-  if (best) {
-    if (best.id) return `#${CSS.escape(best.id)}`;
-    const first = best.className?.split(/\s+/)[0];
-    if (first) return `.${CSS.escape(first)}`;
-    return best.tagName.toLowerCase();
-  }
-
-  return "body";
 }

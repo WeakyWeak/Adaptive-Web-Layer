@@ -187,10 +187,10 @@ describe("dropUnrequestedColour", () => {
 
 describe("drill-down (P10)", () => {
   const withParts: DomSnapshot = { ...snapshot, blocks: [
-    { id: "s1", tag: "div", hints: "r8t", text: "You may also like", box: [70, 10, 25, 80], fixed: false, area: 15, linkDensity: 0.8, main: false, inMain: false, children: 4, ad: false },
-    { id: "s2", tag: "main", hints: "", text: "Article", box: [20, 10, 50, 200], fixed: false, area: 45, linkDensity: 0, main: true, inMain: false, children: 0, ad: false },
+    { id: "s1", tag: "div", hints: "r8t", text: "You may also like", box: [70, 10, 25, 80], fixed: false, area: 15, linkDensity: 0.8, main: false, inMain: false, children: 4, ad: false, textShare: 0, title: false },
+    { id: "s2", tag: "main", hints: "", text: "Article", box: [20, 10, 50, 200], fixed: false, area: 45, linkDensity: 0, main: true, inMain: false, children: 0, ad: false, textShare: 0, title: false },
   ] };
-  const part = { id: "s9", tag: "iframe", hints: "", text: "", box: [70, 60, 25, 20] as [number, number, number, number], fixed: false, area: 2, linkDensity: 0, main: false, inMain: false, children: 0, ad: true, within: "s1" };
+  const part = { id: "s9", tag: "iframe", hints: "", text: "", box: [70, 60, 25, 20] as [number, number, number, number], fixed: false, area: 2, linkDensity: 0, main: false, inMain: false, children: 0, ad: true, textShare: 0, title: false, within: "s1" };
 
   it("lets the model look inside a block, then plans with its parts", async () => {
     const generator = scripted(

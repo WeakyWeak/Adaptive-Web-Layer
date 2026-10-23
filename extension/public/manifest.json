@@ -15,6 +15,9 @@
     "http://localhost:*/*",
     "http://127.0.0.1:*/*"
   ],
+  "optional_host_permissions": [
+    "<all_urls>"
+  ],
   "background": {
     "service_worker": "background.js",
     "type": "module"

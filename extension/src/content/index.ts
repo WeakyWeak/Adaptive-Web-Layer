@@ -21,7 +21,7 @@ import type { ApplyContext } from "../shared/registry";
 import type { PlanChanges } from "../shared/aiFields";
 import type { PreviewElements } from "../shared/elementPlan";
 import { currentAiValues, resetSiteRule, savedSiteSelectors, withSiteElements, withSitePatch } from "../shared/sitePatch";
-import { getContentRegionSelector } from "./domUtils";
+import { forgetContentRegion, getContentRegionSelector } from "./domUtils";
 import { inspectPage } from "./inspector";
 import { measurePage } from "./measure";
 
@@ -149,9 +149,10 @@ if (isRestrictedPage()) {
   history.pushState = ((...args: Parameters<History["pushState"]>) => {
     originalPushState(...args);
     hostname = window.location.hostname;
+    forgetContentRegion();
     void applyFromStorage();
   }) as History["pushState"];
-  window.addEventListener("popstate", () => { hostname = window.location.hostname; void applyFromStorage(); });
+  window.addEventListener("popstate", () => { hostname = window.location.hostname; forgetContentRegion(); void applyFromStorage(); });
   window.addEventListener("hashchange", () => { hostname = window.location.hostname; void applyFromStorage(); });
   window.addEventListener("pagehide", () => {
     observer?.disconnect();
@@ -327,7 +328,8 @@ if (isRestrictedPage()) {
         const effective = previewChanges ? withSitePatch(settings, hostname, previewChanges) : settings;
         const appearance = resolveAppearance(effective, hostname);
         const region = document.querySelector(getContentRegionSelector(settings.global.applyToWholePage)) ?? document.body;
-        const hidden = previewElements ? previewSelectors(previewElements).hide.flatMap((selector) => {
+        const previewed = previewElements ? previewSelectors(previewElements) : null;
+        const hidden = previewed ? [...previewed.hide, ...previewed.dim].flatMap((selector) => {
           try { return Array.from(document.querySelectorAll(selector)); } catch { return []; }
         }) : [];
         const result = await measurePage(document, {

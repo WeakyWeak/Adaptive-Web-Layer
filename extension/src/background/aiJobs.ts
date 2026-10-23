@@ -22,7 +22,7 @@ import { beginJob, cancelJob, clearJob, endJob, patchJob, writeJob } from "./job
 import { runPlanner } from "./planner";
 import { problemLines } from "./reviewPrompt";
 import { clearShots } from "./screenshot";
-import { clearSnapshot, decideReview, inspectorChanges, measureState, reviewJob, saveSnapshot, setPreview, settle, steps, type Settled } from "./supervise";
+import { clearSnapshot, decideReview, guardSettings, inspectorChanges, measureState, reviewJob, saveSnapshot, setPreview, settle, steps, type Settled } from "./supervise";
 import { tabMessage, tabPage } from "./tabs";
 
 export type AiRunKind = typeof AI_RUN_KINDS[number];
@@ -170,10 +170,14 @@ export async function runAiJob(tabId: number, request: string, kind: AiRunKind =
 
     // Measure: preview the draft; undo anything that makes the page measurably worse.
     job = (await patchJob(tabId, job.id, { ...summary, stage: "Measuring the draft", supervision: { ...supervision, steps: steps({ draft: { status: "done" }, measure: { status: "running" } }, draftDone) } })) ?? job;
-    const ledger = draftLedger(changes, elements.items, source ?? "local", sources);
+    // Code rules first (a fix changes only what was measured; width only where lines are too long), then the measured regressions.
+    const guarded = guardSettings({ changes, items: elements.items }, draftLedger(changes, elements.items, source ?? "local", sources), {
+      request, kind, hasMain: snapshot.contentRegion !== "body", before: before?.measures, current,
+    });
+    const { state: draft, ledger } = guarded;
     const settled: Settled = before
-      ? await settle(tabId, before.measures, { changes, items: elements.items }, ledger)
-      : { state: { changes, items: elements.items }, ledger, measured: await measureState(tabId, { changes, items: elements.items }), reverted: [], unresolved: [] };
+      ? await settle(tabId, before.measures, draft, ledger)
+      : { state: draft, ledger, measured: await measureState(tabId, draft), reverted: [], unresolved: [] };
     if (signal.aborted) {
       await setPreview(tabId, null);
       await patchJob(tabId, job.id, { status: "cancelled", stage: "Cancelled" });
@@ -184,7 +188,7 @@ export async function runAiJob(tabId: number, request: string, kind: AiRunKind =
     const measureNote = scores.before !== undefined && scores.draft !== undefined ? `Score ${scores.before} → ${scores.draft}` : before ? undefined : "Could not measure this page";
     if (Object.keys(final.changes).length === 0 && !final.items.some((item) => item.enabled)) {
       await setPreview(tabId, null);
-      await patchJob(tabId, job.id, { status: "nothing", stage: "Nothing to change", changes: {}, elements: final.items, warnings: [...warnings, "Every change made the page measurably worse, so none was kept."], supervision: { ...supervision, ledger: settled.ledger, scores, reverted: settled.reverted, steps: steps({ draft: { status: "done" }, measure: { status: "done", note: measureNote }, review: { status: "skipped" }, final: { status: "done" } }), review: "off" } });
+      await patchJob(tabId, job.id, { status: "nothing", stage: "Nothing to change", changes: {}, elements: final.items, warnings: [...warnings, "No change was kept: each one broke a code rule or made the page measurably worse (see the list)."], supervision: { ...supervision, ledger: settled.ledger, scores, reverted: settled.reverted, steps: steps({ draft: { status: "done" }, measure: { status: "done", note: measureNote }, review: { status: "skipped" }, final: { status: "done" } }), review: "off" } });
       return;
     }
 

@@ -8,6 +8,7 @@
 import { z } from "zod";
 import { AI_FIELDS, describeChange, PlanChangesSchema, type PlanChanges } from "./aiFields";
 import { blockLabel, dropUnrequestedElements, ELEMENT_ACTIONS, ElementsSchema, validateElements, type ElementAction, type ElementItem, type Elements, type RejectedElement } from "./elementPlan";
+import type { FindingType } from "./inspector";
 import { fieldJsonSchema, type JsonSchema } from "./jsonSchema";
 import type { DomSnapshot } from "./plan";
 
@@ -40,7 +41,8 @@ export type ReviewReply = z.infer<typeof ReviewReplySchema>;
  * providers silently skip optional ones.
  */
 export function reviewJsonSchema(draftRefs: readonly string[], blockIds: readonly string[]): JsonSchema {
-  const ids: JsonSchema = blockIds.length ? { type: "string", enum: [...blockIds] } : { type: "string" };
+  // Enum values must be unique (drill-down can list a block twice).
+  const ids: JsonSchema = blockIds.length ? { type: "string", enum: [...new Set(blockIds)] } : { type: "string" };
   const list = (action: string): JsonSchema => ({ type: "array", maxItems: 15, items: ids, description: `Block ids to ${action} that the draft missed` });
   return {
     type: "object",
@@ -56,7 +58,7 @@ export function reviewJsonSchema(draftRefs: readonly string[], blockIds: readonl
           type: "object",
           additionalProperties: false,
           required: ["ref", "reason"],
-          properties: { ref: draftRefs.length ? { type: "string", enum: [...draftRefs] } : { type: "string" }, reason: { type: "string", maxLength: 200 } },
+          properties: { ref: draftRefs.length ? { type: "string", enum: [...new Set(draftRefs)] } : { type: "string" }, reason: { type: "string", maxLength: 200 } },
         },
       },
       add: {
@@ -231,20 +233,29 @@ export const MeasuresSchema = z.object({
   score: z.number(),
   /** Visible characters of text in the main region. */
   mainText: z.number().min(0),
-  /** Characters of main-region text inside blocks the plan hides on purpose. */
+  /** Characters of main-region text inside blocks the plan hides or dims on purpose. */
   hiddenText: z.number().min(0).default(0),
+  /** Visible characters of text on the whole page. */
+  pageText: z.number().min(0).default(0),
   /** Visible navigation, forms and alerts. */
   protectedVisible: z.number().min(0),
   overflow: z.number().min(0),
   overlap: z.number().min(0),
   clipped: z.number().min(0),
+  /** Types of the problems the inspector measured (small-text, long-lines, …). */
+  problems: z.array(z.string().max(40)).max(20).default([]),
 });
 export type Measures = z.infer<typeof MeasuresSchema>;
 
-/** Text a plan may hide inside the main region on purpose (comments, an in-article promo), as a share of it. */
+/** Text a plan may hide or dim inside the main region on purpose (comments, an in-article promo), as a share of it. */
 export const MAX_HIDDEN_MAIN_TEXT = 0.25;
 /** Main text that disappears without being hidden on purpose (collateral damage). */
 export const MAX_TEXT_LOSS = 0.02;
+/**
+ * Share of the whole page's text a plan may remove. The safety net for pages
+ * where the main content was not found: hiding the article removes most of it.
+ */
+export const MAX_PAGE_TEXT_LOSS = 0.5;
 
 /**
  * Why `after` is worse than `before`; empty when it is not. `protectedHidden`
@@ -256,12 +267,76 @@ export function regressions(before: Measures, after: Measures, protectedHidden =
   const base = Math.max(before.mainText, 1);
   const lost = (before.mainText - after.mainText - after.hiddenText) / base;
   if (lost > MAX_TEXT_LOSS) reasons.push(`${Math.round(lost * 100)}% of the main text disappeared.`);
-  if (after.hiddenText / base > MAX_HIDDEN_MAIN_TEXT) reasons.push(`It would hide ${Math.round(after.hiddenText / base * 100)}% of the main text.`);
+  if (after.hiddenText / base > MAX_HIDDEN_MAIN_TEXT) reasons.push(`It would hide or dim ${Math.round(after.hiddenText / base * 100)}% of the main text.`);
+  if (before.pageText > 0 && (before.pageText - after.pageText) / before.pageText > MAX_PAGE_TEXT_LOSS) reasons.push(`${Math.round((before.pageText - after.pageText) / before.pageText * 100)}% of the page's text would disappear.`);
   if (after.overflow > before.overflow) reasons.push("The page started scrolling sideways.");
   if (after.overlap > before.overlap) reasons.push("Text started overlapping.");
   if (after.clipped > before.clipped) reasons.push("Some text got cut off.");
   if (after.protectedVisible + protectedHidden < before.protectedVisible) reasons.push("Navigation, a form or an alert disappeared.");
   return reasons;
+}
+
+// ── "Fix this page": only what a measured problem calls for ─────────────────
+// The local model tends to change every setting it knows. A fix run keeps the
+// settings that address a problem code measured on this page, plus calmer
+// motion (the request asks to remove distractions); the rest is undone.
+export const FIX_FIELDS: Readonly<Partial<Record<FindingType, readonly string[]>>> = {
+  "small-text": ["fontSize", "fontFamily"],
+  "low-contrast": ["fixContrast", "contrast"],
+  "tight-line-height": ["lineHeight", "paragraphSpacing"],
+  "huge-block": ["paragraphSpacing", "lineHeight"],
+  "long-lines": ["maxContentWidth"],
+  "narrow-column": ["maxContentWidth"],
+  "sticky-cover": ["staticifyStickyHeaders"],
+  "link-distinction": ["underlineLinks"],
+  "focus-indicator": ["focusRing"],
+};
+const CALM_FIELDS = ["reduceMotion", "reduceParallax", "pauseAutoplay"];
+
+/** The settings a fix run may change, given the problem types measured before it. */
+export function fixableFields(problems: readonly string[]): Set<string> {
+  return new Set([...CALM_FIELDS, ...problems.flatMap((type) => FIX_FIELDS[type as FindingType] ?? [])]);
+}
+
+// ── Content width: changed only where it helps ───────────────────────────────
+// Small models narrow the column on almost every page, which squeezes card
+// grids and already-narrow articles. Code decides whether a width change is
+// wanted at all, and how narrow it may go.
+export const WIDTH_WORDS = /\b(width|wide|wider|widen|narrow\w*|column|line length|long lines|shorter lines|margins?)\b/i;
+/** The narrowest column still holds about this many characters per line. */
+export const MIN_CHARS_PER_LINE = 66;
+/** Average Latin glyph width as a share of the font size. */
+const GLYPH_WIDTH = 0.5;
+
+export function minContentWidth(fontSize: number): number {
+  return Math.min(2000, Math.ceil(fontSize * GLYPH_WIDTH * MIN_CHARS_PER_LINE / 10) * 10);
+}
+
+export interface WidthFacts {
+  /** The reader asked about width, columns or line length. */
+  asked: boolean;
+  /** The page has an article-like main region (otherwise the width would apply to the whole layout). */
+  hasMain: boolean;
+  /** Code measured over-long lines before the change. */
+  longLines: boolean;
+  /** Text size in px the plan ends up with. */
+  fontSize: number;
+}
+
+/**
+ * Keep a content-width change only when it helps: asked for, or the page
+ * measured over-long lines in an article. Never narrower than MIN_CHARS_PER_LINE
+ * characters at the planned text size. `reason` explains a removal or a change.
+ */
+export function guardWidth(changes: PlanChanges, facts: WidthFacts): { changes: PlanChanges; removed?: string; widened?: string } {
+  const value = changes.maxContentWidth;
+  if (typeof value !== "number") return { changes };
+  const rest = Object.fromEntries(Object.entries(changes).filter(([key]) => key !== "maxContentWidth"));
+  if (!facts.asked && !facts.hasMain) return { changes: rest, removed: "No article was found on this page, so a narrower column would squeeze the whole layout." };
+  if (!facts.asked && !facts.longLines) return { changes: rest, removed: "The lines are already a comfortable length, so the width stays as the site made it." };
+  const floor = minContentWidth(facts.fontSize);
+  if (value >= floor) return { changes };
+  return { changes: { ...rest, maxContentWidth: floor }, widened: `Widened to ${floor}px so each line still holds about ${MIN_CHARS_PER_LINE} characters at ${facts.fontSize}px text.` };
 }
 
 /** When "when-unsure" review is the policy: is this local draft doubtful? */

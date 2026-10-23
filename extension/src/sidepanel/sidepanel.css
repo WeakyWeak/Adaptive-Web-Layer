@@ -86,6 +86,15 @@ button.primary { background: var(--accent); border-color: var(--accent); color: 
 
 .consent { border-top: 1px solid var(--border); padding-top: 8px; display: flex; flex-direction: column; gap: 6px; }
 .consent p { margin: 0; font-size: 12px; color: #cbd5e1; }
+.consent h3 { margin: 0; font-size: 14px; }
+.consent-list { margin: 0; padding-left: 18px; font-size: 12px; color: #cbd5e1; display: flex; flex-direction: column; gap: 3px; }
+/* An optional extra, set apart from the consent buttons: box, checkbox on the left, title + explanation. */
+.consent-option { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); cursor: pointer; }
+.consent-option:has(input:checked) { border-color: var(--accent); }
+.consent-option input { flex: none; width: 16px; height: 16px; margin: 2px 0 0; accent-color: var(--accent); }
+.consent-option > span { display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
+.screenshot-hint { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border: 1px dashed var(--border); border-radius: 8px; }
+.screenshot-hint p { margin: 0; }
 .fallback { border-top: 1px solid var(--border); padding-top: 8px; display: flex; flex-direction: column; gap: 6px; }
 .fallback p { margin: 0; }
 
@@ -173,3 +182,4 @@ button.link { padding: 0 6px; font-size: 12px; }
 .shots img { width: 100%; border-radius: 6px; border: 1px solid var(--border); margin-top: 6px; }
 .shots button[aria-pressed="true"] { border-color: var(--accent); }
 @media (prefers-reduced-motion: reduce) { .step-running .step-dot { animation: none; } }
+.refused-note { color: var(--muted); font-size: 12px; }

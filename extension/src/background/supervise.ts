@@ -5,14 +5,16 @@
 // Code has the last word: any change that makes the page measurably worse is
 // undone automatically, whoever proposed it.
 
-import { describeChanges, type PlanChanges } from "../shared/aiFields";
+import { describeChange, describeChanges, type PlanChanges } from "../shared/aiFields";
 import { readJob, type AiJob, type Step, type Supervision } from "../shared/aiJob";
 import { previewElementsOf, type ElementItem, type PreviewElements } from "../shared/elementPlan";
 import { mergeFixes, readabilityScore, type Finding, type InspectReport, type Score } from "../shared/inspector";
 import { MeasureResultSchema, RegionBlocksSchema } from "../shared/messages";
 import { DomSnapshotSchema, effectiveChanges, formatProviderError, ProviderError, toProviderError, type DomSnapshot } from "../shared/plan";
 import { ProviderRouter } from "../shared/providerRouter";
-import { applyReview, draftItems, regressions, ReviewReplySchema, reviewJsonSchema, type LedgerEntry, type Measures } from "../shared/review";
+import type { JsonSchema } from "../shared/jsonSchema";
+import type { ImageInput } from "../shared/llmProvider";
+import { applyReview, draftItems, fixableFields, guardWidth, regressions, ReviewReplySchema, reviewJsonSchema, WIDTH_WORDS, type LedgerEntry, type Measures, type ReviewReply } from "../shared/review";
 import { cloudConsentFor, normalizeHostname, type Settings } from "../shared/settings";
 import { currentAiValues } from "../shared/sitePatch";
 import { loadSettings, saveSettings } from "../shared/storage";
@@ -64,7 +66,7 @@ export async function measureState(tabId: number, state: DraftState | null): Pro
   await setPreview(tabId, state && { changes: state.changes, elements: state.items });
   const parsed = MeasureResultSchema.safeParse(await tabMessage(tabId, { type: "MEASURE_PAGE" }));
   if (!parsed.success) return null;
-  const { report, mainText, hiddenText, protectedVisible } = parsed.data;
+  const { report, mainText, hiddenText, pageText, protectedVisible } = parsed.data;
   const score = readabilityScore(report.findings);
   return {
     report,
@@ -73,10 +75,12 @@ export async function measureState(tabId: number, state: DraftState | null): Pro
       score: score.value,
       mainText,
       hiddenText,
+      pageText,
       protectedVisible,
       overflow: count(report.findings, "horizontal-overflow"),
       overlap: count(report.findings, "overlap"),
       clipped: count(report.findings, "clipped-content"),
+      problems: [...new Set(report.findings.map((finding) => finding.type))],
     },
   };
 }
@@ -88,8 +92,42 @@ export function inspectorChanges(report: InspectReport, current: Record<string, 
   return Object.fromEntries(Object.entries(effectiveChanges(merged, current)).filter(([key]) => !(key in draft)));
 }
 
-// ── Auto-revert ──────────────────────────────────────────────────────────────
 const active = (entry: LedgerEntry) => entry.status === "kept" || entry.status === "added";
+
+// ── Code rules on settings ───────────────────────────────────────────────────
+/**
+ * Code's rules on a state's settings, with the ledger updated (an undone
+ * setting shows as undone, with the rule): a fix run keeps only settings a
+ * measured problem calls for; a width change must help (guardWidth).
+ */
+export function guardSettings(state: DraftState, ledger: readonly LedgerEntry[], input: {
+  request: string;
+  kind?: string;
+  hasMain: boolean;
+  before?: Measures;
+  current: Record<string, string | number | boolean>;
+}): { state: DraftState; ledger: LedgerEntry[] } {
+  const entries = ledger.map((entry) => ({ ...entry }));
+  const undo = (key: string, reason: string) => {
+    const entry = entries.find((item) => item.ref === key && active(item));
+    if (entry) Object.assign(entry, { status: "reverted", reason: `Undone by a code rule: ${reason}`.slice(0, 240) });
+  };
+  let changes = state.changes;
+  if (input.kind === "fix" && input.before) {
+    const allowed = fixableFields(input.before.problems);
+    for (const key of Object.keys(changes)) if (!allowed.has(key)) undo(key, "no problem measured on this page calls for it.");
+    changes = Object.fromEntries(Object.entries(changes).filter(([key]) => allowed.has(key)));
+  }
+  const fontSize = Number(changes.fontSize ?? input.current.fontSize ?? 16) || 16;
+  const asked = input.kind !== "fix" && input.kind !== "clean" && WIDTH_WORDS.test(input.request);
+  const guard = guardWidth(changes, { asked, hasMain: input.hasMain, longLines: input.before?.problems.includes("long-lines") ?? false, fontSize });
+  if (guard.removed) undo("maxContentWidth", guard.removed);
+  const widened = guard.widened && entries.find((item) => item.ref === "maxContentWidth" && active(item));
+  if (widened) Object.assign(widened, { label: describeChange("maxContentWidth", guard.changes.maxContentWidth!), reason: guard.widened!.slice(0, 240) });
+  return { state: { ...state, changes: guard.changes }, ledger: entries };
+}
+
+// ── Auto-revert ──────────────────────────────────────────────────────────────
 const protectedHidden = (state: DraftState) => state.items.filter((item) => item.enabled && item.action === "hide" && item.protect).length;
 
 function without(state: DraftState, refs: ReadonlySet<string>): DraftState {
@@ -181,6 +219,15 @@ async function rememberReviewed(hostname: string): Promise<void> {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** Chrome allows screenshots only with the "every site" permission, or after the toolbar button or shortcut on this tab. */
+export const NO_SHOTS_NOTE = "Reviewed without screenshots: Chrome allows them only after you allow screenshots on every site, or open Adaptive Web Layer from its toolbar button on this tab.";
+
+/** The provider rejected the request itself (HTTP 400: invalid argument, schema too complex), not the reply. */
+export function refusedRequest(error: unknown, signal: AbortSignal): boolean {
+  if (signal.aborted || !(error instanceof ProviderError) || error.code !== "unknown") return false;
+  return /invalid argument|invalid_argument|schema|HTTP 400|too many states|unsupported/i.test(error.message);
+}
+
 /**
  * The cloud reviews the job's current preview: screenshots (before/after with
  * numbered boxes), one validated review call, regions mapped to blocks, the
@@ -205,11 +252,16 @@ export async function reviewJob(tabId: number, jobId: string, signal: AbortSigna
     // Before/after screenshots with numbered boxes; none if the tab is not visible.
     const draftIds = new Set(state.items.filter((item) => item.enabled).map((item) => item.id));
     const ids = snapshot.blocks.map((block) => block.id);
-    await setPreview(tabId, null);
-    await sleep(PAINT_MS);
-    const before = await captureWithMarks(tabId, ids, draftIds);
-    await setPreview(tabId, { changes: state.changes, elements: state.items });
-    await sleep(PAINT_MS);
+    const wantShots = settings.privacy.reviewScreenshots;
+    if (wantShots) {
+      await setPreview(tabId, null);
+      await sleep(PAINT_MS);
+    }
+    const before = wantShots ? await captureWithMarks(tabId, ids, draftIds) : null;
+    if (wantShots) {
+      await setPreview(tabId, { changes: state.changes, elements: state.items });
+      await sleep(PAINT_MS);
+    }
     const after = before ? await captureWithMarks(tabId, ids, new Set()) : null;
     const images = [before, after].filter((image): image is NonNullable<typeof image> => image !== null);
     const shots = await saveShots(tabId, { before, after });
@@ -217,7 +269,7 @@ export async function reviewJob(tabId: number, jobId: string, signal: AbortSigna
 
     const draft = draftItems(state.changes, state.items);
     const draftMeasure = await measureState(tabId, state);
-    const { reply } = await runValidated({ generateStructured: (request) => router.review(request) }, {
+    const review = (jsonSchema: JsonSchema, shots: readonly ImageInput[]) => runValidated({ generateStructured: (request) => router.review(request) }, {
       systemPrompt: buildReviewSystemPrompt(),
       userPrompt: (errors) => buildReviewUserPrompt({
         request: job.request,
@@ -226,12 +278,29 @@ export async function reviewJob(tabId: number, jobId: string, signal: AbortSigna
         snapshot,
         before: supervision.scores.before !== undefined ? { score: { value: supervision.scores.before, contributors: [] } } : undefined,
         after: draftMeasure ? { score: draftMeasure.score, findings: draftMeasure.report.findings } : undefined,
-        screenshots: images.length > 0,
+        screenshots: shots.length > 0,
       }, errors),
       schema: ReviewReplySchema,
-      jsonSchema: reviewJsonSchema(draft.map((item) => item.ref), snapshot.blocks.map((block) => block.id)),
+      jsonSchema,
+      images: shots.length ? [...shots] : undefined,
       maxTokens: REVIEW_MAX_TOKENS,
     }, { signal });
+    // A provider may refuse the request itself (a schema too large for it, or the images):
+    // retry with plain id lists (code validates ids anyway), then without screenshots.
+    let sent = images;
+    let reply: ReviewReply;
+    try {
+      ({ reply } = await review(reviewJsonSchema(draft.map((item) => item.ref), snapshot.blocks.map((block) => block.id)), sent));
+    } catch (first) {
+      if (!refusedRequest(first, signal)) throw first;
+      try {
+        ({ reply } = await review(reviewJsonSchema([], []), sent));
+      } catch (second) {
+        if (!sent.length || !refusedRequest(second, signal)) throw second;
+        sent = [];
+        ({ reply } = await review(reviewJsonSchema([], []), sent));
+      }
+    }
 
     // Clutter the reviewer saw but had no box for: map each area to a block.
     const regionReasons: Record<string, string> = {};
@@ -250,9 +319,13 @@ export async function reviewJob(tabId: number, jobId: string, signal: AbortSigna
     }
 
     const outcome = applyReview({ request: job.request, snapshot: reviewed, current, changes: state.changes, items: state.items, ledger: supervision.ledger, reply, regionReasons });
+    // The reviewer's settings pass the same code rules as the draft's.
+    const guarded = guardSettings({ changes: outcome.changes, items: outcome.items }, outcome.ledger, {
+      request: job.request, kind: job.kind, hasMain: snapshot.contentRegion !== "body", before: supervision.before, current,
+    });
     const settled = supervision.before
-      ? await settle(tabId, supervision.before, { changes: outcome.changes, items: outcome.items }, outcome.ledger)
-      : { state: { changes: outcome.changes, items: outcome.items }, ledger: outcome.ledger, measured: await measureState(tabId, { changes: outcome.changes, items: outcome.items }), reverted: [], unresolved: [] };
+      ? await settle(tabId, supervision.before, guarded.state, guarded.ledger)
+      : { state: guarded.state, ledger: guarded.ledger, measured: await measureState(tabId, guarded.state), reverted: [], unresolved: [] };
     await rememberReviewed(job.hostname);
     await consumeAllowOnce(job.hostname, true);
     await update({
@@ -266,12 +339,12 @@ export async function reviewJob(tabId: number, jobId: string, signal: AbortSigna
       review: "reviewed",
       reviewer: router.reviewedBy ?? undefined,
       verdict: reply.verdict,
-      note: (images.length ? reply.notes : `${reply.notes} (Reviewed without screenshots: Chrome only allows them after you open Adaptive Web Layer from its toolbar button on this tab, or press Alt+Shift+F.)`).trim().slice(0, 400) || undefined,
+      note: `${reply.notes}${sent.length ? "" : ` (${images.length ? "Reviewed without screenshots: the cloud model refused them." : wantShots ? NO_SHOTS_NOTE : "Reviewed without screenshots: turned off in Settings → Privacy."})`}`.trim().slice(0, 400) || undefined,
       ledger: settled.ledger,
       shots: shots || supervision.shots,
       reverted: [...supervision.reverted, ...settled.reverted].slice(0, 10),
       scores: { ...supervision.scores, final: settled.measured?.score.value ?? supervision.scores.draft },
-      steps: steps({ review: { status: "done", note: `${reply.verdict === "approve" ? "Approved" : "Revised"}${images.length ? "" : ", text only"}` }, final: { status: "done" } }, supervision.steps),
+      steps: steps({ review: { status: "done", note: `${reply.verdict === "approve" ? "Approved" : "Revised"}${sent.length ? "" : ", text only"}` }, final: { status: "done" } }, supervision.steps),
     });
   } catch (caught) {
     const error = toProviderError(caught);

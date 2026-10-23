@@ -17,7 +17,7 @@ import { defaultSettings } from "../shared/settings";
 import { currentAiValues } from "../shared/sitePatch";
 
 const block = (id: string, extra: Partial<SnapshotBlock> = {}): SnapshotBlock => ({
-  id, tag: "div", hints: "", text: "", box: [0, 0, 100, 10], fixed: false, area: 2, linkDensity: 0, main: false, inMain: false, children: 0, ad: false, ...extra,
+  id, tag: "div", hints: "", text: "", box: [0, 0, 100, 10], fixed: false, area: 2, linkDensity: 0, main: false, inMain: false, children: 0, ad: false, textShare: 0, title: false, ...extra,
 });
 
 // Mirrors fixtures/clutter.html.
@@ -52,6 +52,18 @@ describe("validateElements", () => {
     expect(review.rejected.map((item) => item.reason)).toEqual(Array(2).fill("This is the main content, or contains it."));
     // Highlighting the main content is harmless and allowed.
     expect(validateElements(lists([], [], ["s4"]), snapshot).items).toHaveLength(1);
+  });
+
+  it("never hides or dims the page title or a block holding most of the page's text, even when main was missed", () => {
+    const page: DomSnapshot = { ...snapshot, contentRegion: "body", blocks: [
+      block("t1", { hints: "elementor-section hero", text: "30 Bad Websites", title: true, area: 20 }),
+      block("t2", { hints: "elementor-column", text: "Want to see the worst websites?", textShare: 83, area: 30 }),
+      block("t3", { hints: "comments-area", text: "42 comments", textShare: 50, area: 10 }),
+      block("t4", { hints: "modal", text: "Read our terms", textShare: 40, fixed: true }),
+    ] };
+    const review = validateElements(lists(["t1", "t3", "t4"], ["t2"]), page);
+    expect(review.items.map((item) => item.id)).toEqual(["t3", "t4"]);
+    expect(review.rejected.map((item) => item.reason)).toEqual(["This holds the page title.", "This holds 83% of the page's text: that is content, not clutter."]);
   });
 
   it("allows hiding a block inside the main content (comments)", () => {
