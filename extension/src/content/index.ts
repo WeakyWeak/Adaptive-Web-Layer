@@ -15,7 +15,7 @@ import { clearPreviewMarks, previewSelectors } from "./previewMarks";
 import type { ApplyContext } from "../shared/registry";
 import type { PlanChanges } from "../shared/aiFields";
 import type { PreviewElements } from "../shared/elementPlan";
-import { savedSiteSelectors, withSiteElements, withSitePatch } from "../shared/sitePatch";
+import { resetSiteRule, savedSiteSelectors, withSiteElements, withSitePatch } from "../shared/sitePatch";
 
 // Detect restricted pages (chrome://, chrome-extension://, Web Store, etc.)
 function isRestrictedPage(): boolean {
@@ -209,11 +209,12 @@ if (isRestrictedPage()) {
     }
 
     if (msg.type === "RESET_PAGE") {
-      void loadSettings().then((settings) => {
-        const current = matchingSiteRule(settings, hostname);
-        const rule = { hostname, enabled: false, includeSubdomains: current?.includeSubdomains ?? false, profileId: current?.profileId ?? null, disabledOperations: current?.disabledOperations ?? [], typography: current?.typography ?? {}, appearance: current?.appearance ?? {}, focus: current?.focus ?? {}, motion: current?.motion ?? {} };
-        return saveSettings({ ...settings, siteRules: [...settings.siteRules.filter((item) => item.hostname !== hostname), rule] });
-      }).then((ok) => sendResponse({ type: "ACK", ok, error: ok ? undefined : "Could not reset this page" })).catch((error) => sendResponse({ type: "ACK", ok: false, error: String(error) }));
+      // Remove what the extension changes here; the extension itself stays on.
+      previewChanges = null;
+      previewElements = null;
+      peekId = null;
+      clearPreviewMarks();
+      void loadSettings().then((settings) => saveSettings(resetSiteRule(settings, hostname))).then((ok) => sendResponse({ type: "ACK", ok, error: ok ? undefined : "Could not reset this page" })).catch((error) => sendResponse({ type: "ACK", ok: false, error: String(error) }));
       return true;
     }
 

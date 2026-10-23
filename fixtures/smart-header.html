@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Smart theme headers fixture</title>
+  <style>
+    body { margin: 0; background: #ffffff; color: #1f2937; font: 17px/1.6 system-ui, sans-serif; }
+    .brand { background: #f4b400; color: #111111; padding: 16px 32px; display: flex; gap: 24px; align-items: center; }
+    .brand strong { font-size: 22px; }
+    .brand a { color: #1a1a1a; text-decoration: none; font-weight: 600; }
+    .hero { background-image: linear-gradient(135deg, #ffffff, #e0f2fe); padding: 48px 32px; }
+    .hero h2 { color: #0f172a; margin: 0 0 8px; font-size: 32px; }
+    .hero p { color: #334155; margin: 0; }
+    .sticky-bar { position: sticky; top: 0; padding: 10px 32px; color: #475569; font-weight: 600; }
+    .sticky-bar.solid { background: #ffffff; color: #222222; box-shadow: 0 1px 4px rgba(0,0,0,.15); }
+    main { max-width: 720px; margin: 0 auto; padding: 24px 32px 2000px; }
+    .late-banner { background: #f8fafc; color: #334155; padding: 14px 32px; border-bottom: 1px solid #e2e8f0; }
+  </style>
+</head>
+<body>
+  <header class="brand"><strong>Brightline News</strong><nav aria-label="Main"><a href="#">World</a> <a href="#">Science</a> <a href="#">Culture</a></nav></header>
+  <section class="hero"><h2>Headlines over a gradient</h2><p>Text on a background image keeps the colour the site chose for it.</p></section>
+  <div class="sticky-bar" id="sticky-bar">Section: Science (turns solid white when you scroll)</div>
+  <main>
+    <h1>Why the header must stay readable</h1>
+    <p>Smart theme recolours page backgrounds and text. Headers often use brand colours, gradients or images, and many are rendered or restyled by script after the page loads.</p>
+    <p>Each of those should keep readable text in both Dark and Light.</p>
+  </main>
+  <script>
+    // A banner rendered later by script, like many sites' headers.
+    setTimeout(() => {
+      const banner = document.createElement("div");
+      banner.className = "late-banner";
+      banner.id = "late-banner";
+      banner.innerHTML = "<span>Rendered later by script: subscribe for updates</span>";
+      document.body.insertBefore(banner, document.querySelector("main"));
+    }, 800);
+    // A sticky bar that becomes solid on scroll.
+    addEventListener("scroll", () => document.getElementById("sticky-bar").classList.toggle("solid", scrollY > 40));
+  </script>
+</body>
+</html>

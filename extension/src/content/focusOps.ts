@@ -1,17 +1,14 @@
 import { z } from "zod";
-import { registerOperation, type ApplyContext, type ApplyResult, type Operation, type Revert } from "../shared/registry";
+import { registerOperation, type Operation } from "../shared/registry";
+import { motionOperations } from "./motionOps";
+import { setStyleEntry } from "./styleEntry";
 import type { FocusPrefs, MotionPrefs } from "../shared/settings";
 
 const PROTECTED_SELECTOR = "form, input, textarea, select, button, [role='alert'], [role='alertdialog'], [role='dialog'], nav, [role='navigation'], a[href^='#']";
 const SIDEBAR_SELECTOR = "aside, [role='complementary'], [class*='sidebar' i], [id*='sidebar' i], [class*='recommend' i], [id*='recommend' i], [class*='advert' i], [id*='advert' i], [class*='sponsor' i]";
 const selectorSchema = z.string().min(1).max(512).refine((value) => !/[{};]/.test(value), "Selector contains unsafe CSS characters");
 
-function css(ctx: ApplyContext, id: string, value: string | null, restore?: () => void): ApplyResult {
-  const previous = ctx.styleLayer.get(id);
-  if (value === null) ctx.styleLayer.remove(id); else ctx.styleLayer.set(id, value);
-  const revert: Revert = () => { if (previous === undefined) ctx.styleLayer.remove(id); else ctx.styleLayer.set(id, previous); restore?.(); };
-  return { ok: true, revert };
-}
+const css = setStyleEntry;
 
 export function isSafeHeuristicCandidate(element: Element): boolean {
   return !element.matches(PROTECTED_SELECTOR) && !element.querySelector(PROTECTED_SELECTOR);
@@ -108,33 +105,7 @@ const staticifyStickyHeaders: Operation<{ enabled: boolean }> = {
     return css(ctx, "staticifyStickyHeaders", `[data-awl-static-target^="${token}-"] { position: static !important; inset: auto !important; top: auto !important; bottom: auto !important; }`, () => restore("data-awl-static-target", marked));
   },
 };
-const reduceMotion: Operation<{ enabled: boolean }> = {
-  id: "reduceMotion", label: "Reduce motion", target: "content-region", protectedElements: [], paramsSchema: z.object({ enabled: z.boolean() }), validate: () => null,
-  apply(ctx, params) { return css(ctx, "reduceMotion", params.enabled ? `:root { scroll-behavior: auto !important; } :not(progress):not([role='progressbar']):not([aria-busy='true']), :not(progress):not([role='progressbar']):not([aria-busy='true'])::before, :not(progress):not([role='progressbar']):not([aria-busy='true'])::after { animation: none !important; animation-play-state: paused !important; transition-property: none !important; scroll-behavior: auto !important; } :focus-visible { outline: auto !important; }` : null); },
-};
-const reduceParallax: Operation<{ enabled: boolean }> = {
-  id: "reduceParallax", label: "Reduce parallax", target: "content-region", protectedElements: [], paramsSchema: z.object({ enabled: z.boolean() }), validate: () => null,
-  apply(ctx, params) {
-    if (!params.enabled || typeof document === "undefined") return css(ctx, "reduceParallax", null);
-    const candidates = Array.from(document.querySelectorAll<HTMLElement>("body *")).slice(0, 3000).filter((element) => element.matches(".parallax, [data-parallax], [class*='parallax' i], [class*='scroll' i]") || getComputedStyle(element).backgroundAttachment === "fixed");
-    const token = globalThis.crypto?.randomUUID?.() ?? Date.now().toString(36); const marked = mark(candidates, "data-awl-parallax-target", token);
-    return css(ctx, "reduceParallax", `[data-awl-parallax-target^="${token}-"] { background-attachment: scroll !important; transform: none !important; }`, () => restore("data-awl-parallax-target", marked));
-  },
-};
-const pauseAutoplay: Operation<{ enabled: boolean }> = {
-  id: "pauseAutoplay", label: "Pause autoplay media", target: "content-region", protectedElements: [], paramsSchema: z.object({ enabled: z.boolean() }), validate: () => null,
-  apply(ctx, params) {
-    const paused = new Set<HTMLMediaElement>(); let lastUserGesture = 0;
-    const pause = (node: ParentNode) => { if (node instanceof HTMLMediaElement && node.matches("video[autoplay], audio[autoplay]") && !node.paused) { node.pause(); paused.add(node); } node.querySelectorAll<HTMLMediaElement>("video[autoplay], audio[autoplay]").forEach((media) => { if (!media.paused) { media.pause(); paused.add(media); } }); };
-    const gesture = () => { lastUserGesture = Date.now(); };
-    const onPlay = (event: Event) => { const media = event.target; if (media instanceof HTMLMediaElement && media.autoplay && Date.now() - lastUserGesture > 1000) { media.pause(); paused.add(media); } };
-    let observer: MutationObserver | undefined; let attached = false;
-    if (params.enabled && typeof document !== "undefined") { pause(document); document.addEventListener("pointerdown", gesture, true); document.addEventListener("keydown", gesture, true); document.addEventListener("play", onPlay, true); attached = true; observer = new MutationObserver((records) => records.forEach((record) => record.addedNodes.forEach((node) => { if (node instanceof Element) pause(node); }))); observer.observe(document.documentElement, { childList: true, subtree: true }); }
-    return css(ctx, "pauseAutoplay", null, () => { observer?.disconnect(); if (attached && typeof document !== "undefined") { document.removeEventListener("pointerdown", gesture, true); document.removeEventListener("keydown", gesture, true); document.removeEventListener("play", onPlay, true); } paused.clear(); });
-  },
-};
-
-export const focusOperations: Operation<unknown>[] = [hideElements, dimElements, highlightElements, collapseSidebars, dimNonMain, staticifyStickyHeaders, reduceMotion, reduceParallax, pauseAutoplay] as Operation<unknown>[];
+export const focusOperations: Operation<unknown>[] = [...[hideElements, dimElements, highlightElements, collapseSidebars, dimNonMain, staticifyStickyHeaders] as Operation<unknown>[], ...motionOperations];
 export function registerFocusOps(): void { focusOperations.forEach(registerOperation); }
 export function focusPlanSteps(focus: FocusPrefs, motion: MotionPrefs) {
   return [

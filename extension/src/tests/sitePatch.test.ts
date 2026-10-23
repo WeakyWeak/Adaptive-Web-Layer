@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { matchIntents } from "../shared/intents";
-import { defaultSettings, resolveAppearance, resolveFocus, resolveMotion, resolveTypography, SiteRuleSchema, type Settings } from "../shared/settings";
-import { currentAiValues, exactSiteRule, pruneSiteSelectors, restoreSiteRule, savedSiteSelectors, withSiteElements, withSitePatch } from "../shared/sitePatch";
+import { defaultSettings, isSiteEnabled, resolveAppearance, resolveFocus, resolveMotion, resolveTypography, SiteRuleSchema, type Settings } from "../shared/settings";
+import { currentAiValues, exactSiteRule, pruneSiteSelectors, resetSiteRule, restoreSiteRule, savedSiteSelectors, withSiteElements, withSitePatch, withSiteTypography } from "../shared/sitePatch";
 
 const base = (): Settings => defaultSettings();
 
@@ -106,5 +106,43 @@ describe("withSiteElements (element preview and apply share it)", () => {
     expect(savedSiteSelectors(patched, "example.com")).toEqual(["#gone", "#here", ".toc"]);
     const pruned = pruneSiteSelectors(patched, "example.com", ["#gone"]);
     expect(resolveFocus(pruned, "example.com")).toMatchObject({ hiddenSelectors: ["#here"], dimSelectors: [], highlightSelectors: [".toc"] });
+  });
+});
+
+describe("resetSiteRule (Reset page)", () => {
+  const defaults = defaultSettings();
+  const untouched = (settings: Settings, host: string) => {
+    expect(resolveTypography(settings, host)).toEqual(resolveTypography(defaults, host));
+    expect(resolveAppearance(settings, host)).toEqual(resolveAppearance(defaults, host));
+    expect(resolveFocus(settings, host)).toEqual(resolveFocus(defaults, host));
+    expect(resolveMotion(settings, host)).toEqual(resolveMotion(defaults, host));
+  };
+
+  it("removes the site's changes but keeps the extension on for it", () => {
+    const changed = withSiteElements(withSitePatch(base(), "example.com", { fontSize: 22, theme: "dark", pauseAutoplay: true }), "example.com", { hide: ["#ad"], dim: [], highlight: [] });
+    const reset = resetSiteRule(changed, "example.com");
+    expect(isSiteEnabled(reset, "example.com")).toBe(true);
+    untouched(reset, "example.com");
+  });
+
+  it("also neutralises a global profile and global settings on this site only", () => {
+    const settings = { ...base(), activeProfileId: "minimal", global: { ...base().global, typography: { ...base().global.typography, fontSize: 20 } } };
+    const reset = resetSiteRule(settings, "example.com");
+    untouched(reset, "example.com");
+    expect(resolveTypography(reset, "other.org")).toEqual(resolveTypography(settings, "other.org"));
+    expect(resolveMotion(reset, "other.org").pauseAutoplay).toBe(true);
+  });
+
+  it("turns a site back on that an old reset had turned off", () => {
+    const off = { ...base(), siteRules: [SiteRuleSchema.parse({ hostname: "example.com", enabled: false, typography: { fontSize: 30 } })] };
+    const reset = resetSiteRule(off, "example.com");
+    expect(isSiteEnabled(reset, "example.com")).toBe(true);
+    untouched(reset, "example.com");
+  });
+
+  it("lets the next change apply straight away", () => {
+    const reset = resetSiteRule({ ...base(), activeProfileId: "study" }, "example.com");
+    expect(resolveTypography(withSiteTypography(reset, "example.com", { fontSize: 24 }), "example.com").fontSize).toBe(24);
+    expect(resolveMotion(withSitePatch(reset, "example.com", { reduceMotion: true }), "example.com").reduceMotion).toBe(true);
   });
 });

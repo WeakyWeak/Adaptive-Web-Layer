@@ -26,7 +26,7 @@ const server = createServer((request, response) => {
       response.writeHead(404).end("Not found");
       return;
     }
-    const contentType = extname(filePath) === ".html" ? "text/html; charset=utf-8" : "application/octet-stream";
+    const contentType = { ".html": "text/html; charset=utf-8", ".webm": "video/webm" }[extname(filePath)] ?? "application/octet-stream";
     response.writeHead(200, { "Content-Type": contentType });
     response.end(content);
   });

@@ -1,26 +1,17 @@
 import { z } from "zod";
-import { registerOperation, type ApplyContext, type ApplyResult, type Operation, type Revert } from "../shared/registry";
+import { registerOperation, type Operation } from "../shared/registry";
 import { AppearancePrefsSchema } from "../shared/settings";
 import type { AppearancePrefs } from "../shared/settings";
 import { APPEARANCE_PRESERVE_SELECTOR } from "./appearancePreserve";
-import { buildSmartPalette } from "./smartPalette";
+import { createSmartPalette, type SmartPalette } from "./smartPalette";
+import { setStyleEntry } from "./styleEntry";
 
 export { APPEARANCE_PRESERVE_SELECTOR } from "./appearancePreserve";
 const REINVERT_SELECTOR = ["img", "video", "canvas", "svg", "iframe", "pre", "code:not(pre code)", "kbd:not(pre kbd)", "samp:not(pre samp)", "input", "textarea", "select", "button", "[data-awl-preserve]"].join(", ");
 
 const adjustmentFilters = "contrast(var(--awl-contrast, 1)) brightness(var(--awl-brightness, 1)) saturate(var(--awl-saturation, 1))";
 
-function applyCss(ctx: ApplyContext, id: string, css: string | null, restore?: () => void): ApplyResult {
-  const previous = ctx.styleLayer.get(id);
-  if (css === null) ctx.styleLayer.remove(id);
-  else ctx.styleLayer.set(id, css);
-  const revert: Revert = () => {
-    if (previous === undefined) ctx.styleLayer.remove(id);
-    else ctx.styleLayer.set(id, previous);
-    restore?.();
-  };
-  return { ok: true, revert };
-}
+const applyCss = setStyleEntry;
 
 function variableOperation<T extends { value: number }>(
   id: string,
@@ -87,11 +78,13 @@ const themeOperation: Operation<z.infer<typeof ThemeSchema>> = {
       cssParts.push("body a { color: #755520 !important; }");
     }
     const marked: Array<{ element: Element; prior: string | null }> = [];
-    let smartRestore: (() => void) | undefined;
+    let palette: SmartPalette | undefined;
     if (smart && !skip && params.value !== "sepia" && params.bodyReady && typeof document !== "undefined") {
-      const palette = buildSmartPalette(document, params.value);
-      if (palette.css) cssParts.push(palette.css);
-      smartRestore = palette.restore;
+      // Later batches (content rendered or restyled after this apply) rewrite the same entry.
+      const base = cssParts.join("\n");
+      palette = createSmartPalette(document, params.value, (css) => ctx.styleLayer.set("theme", [base, css].filter(Boolean).join("\n")));
+      const css = palette.css();
+      if (css) cssParts.push(css);
     }
     if (params.value === "dark" && !smart && !skip) {
       const selectors: string[] = [];
@@ -115,7 +108,7 @@ const themeOperation: Operation<z.infer<typeof ThemeSchema>> = {
       if (prior === null) element.removeAttribute("data-awl-bg-target");
       else element.setAttribute("data-awl-bg-target", prior);
     });
-    return applyCss(ctx, "theme", cssParts.join("\n"), () => { restore(); smartRestore?.(); });
+    return applyCss(ctx, "theme", cssParts.join("\n"), () => { restore(); palette?.stop(); });
   },
 };
 

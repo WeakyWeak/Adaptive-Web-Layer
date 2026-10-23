@@ -1,3 +1,18 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><title>Motion and autoplay fixture</title><style>
 body{margin:0;font:18px system-ui;color:#18212f}.hero{min-height:50vh;padding:5rem;background:linear-gradient(135deg,#f0c,#0cf);background-attachment:fixed;animation:shift 1s infinite alternate}.parallax{padding:3rem;background:#fff6b7;transform:translateY(8px)}.pulse{display:inline-block;animation:pulse .7s infinite}a:focus-visible{outline:4px solid #111}@keyframes shift{to{filter:hue-rotate(90deg)}}@keyframes pulse{50%{transform:scale(1.3)}}
-</style></head><body><main><div class="hero"><h1 class="pulse">Moving headline</h1><p>CSS animation and a fixed background simulate visual motion.</p></div><section class="parallax" data-parallax><h2>Parallax section</h2><p>This region should become static.</p></section><video autoplay muted loop aria-label="Autoplay sample"><source src="data:video/mp4;base64," type="video/mp4"></video><p><a href="#check">Keyboard focus stays visible</a></p><p id="check">End.</p></main></body></html>
+.videos{display:flex;gap:2rem;padding:2rem;flex-wrap:wrap}.videos figure{margin:0}.videos video{display:block;background:#111}.spinner-box{display:inline-block;margin:2rem;padding:1rem 2rem;background:#dbeafe;border-radius:8px}
+</style></head><body><main>
+<section class="videos" aria-label="Videos">
+  <figure><video id="attr-video" src="media/sample.webm" autoplay muted loop playsinline width="240" height="136" aria-label="Autoplay attribute sample"></video><figcaption>Autoplay attribute</figcaption></figure>
+  <figure class="player"><video id="script-video" src="media/sample.webm" muted loop playsinline width="240" height="136" aria-label="Script-started sample"></video><button id="play-script-video" type="button">Play</button><figcaption>Started by script after 1 s, like most real sites</figcaption></figure>
+</section>
+<div class="hero"><h1 class="pulse">Moving headline</h1><p>CSS animation and a fixed background simulate visual motion.</p></div><section class="parallax" data-parallax><h2>Parallax section</h2><p>This region should become static.</p></section>
+<div id="script-spinner" class="spinner-box">Script animation (Web Animations API)</div>
+<p><a href="#check">Keyboard focus stays visible</a></p><p id="check">End.</p></main>
+<script>
+  const scripted = document.getElementById("script-video");
+  setTimeout(() => scripted.play().catch(() => undefined), 1000);
+  document.getElementById("play-script-video").addEventListener("click", () => scripted.play());
+  document.getElementById("script-spinner").animate([{ transform: "rotate(0deg)" }, { transform: "rotate(360deg)" }], { duration: 1200, iterations: Infinity });
+</script>
+</body></html>

@@ -1,26 +1,39 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
-import type { TypographyPrefs } from "../../shared/settings";
-import { TypographyPrefsSchema } from "../../shared/settings";
+import type { Settings, TypographyPrefs } from "../../shared/settings";
+import { resolveTypography, TypographyPrefsSchema } from "../../shared/settings";
+import { withSiteTypography } from "../../shared/sitePatch";
 import { loadSettings, saveSettings } from "../../shared/storage";
 import { FONT_OPTIONS } from "../../content/typographyOps";
 
 const DEFAULT_PREFS: TypographyPrefs = TypographyPrefsSchema.parse({});
+
+/** Per-site when the tab is a web page; global otherwise. */
+function saveTypography(settings: Settings, hostname: string, typography: TypographyPrefs): Settings {
+  return hostname ? withSiteTypography(settings, hostname, typography) : { ...settings, global: { ...settings.global, typography } };
+}
 
 // ─── Reading panel ────────────────────────────────────────────────────────────
 export default function ReadingPanel(): React.ReactElement {
   const [prefs, setPrefs] = useState<TypographyPrefs>(DEFAULT_PREFS);
   const [saved, setSaved] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [hostname, setHostname] = useState("");
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Load current settings on mount
+  // Load this site's resolved typography on mount. Changes are saved for this
+  // site, like the other popup panels, so "Reset page" can undo all of them.
   useEffect(() => {
-    loadSettings()
-      .then((s) => {
-        setPrefs(s.global.typography);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      let host = "";
+      try { host = new URL(tabs[0]?.url ?? "").hostname.toLowerCase(); } catch { /* not a web page */ }
+      setHostname(host);
+      loadSettings()
+        .then((s) => {
+          setPrefs(host ? resolveTypography(s, host) : s.global.typography);
+          setLoading(false);
+        })
+        .catch(() => setLoading(false));
+    });
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
@@ -52,16 +65,10 @@ export default function ReadingPanel(): React.ReactElement {
       // Debounced save to storage
       if (debounceRef.current) clearTimeout(debounceRef.current);
       debounceRef.current = setTimeout(() => {
-        loadSettings().then((settings) => {
-          const updated = {
-            ...settings,
-            global: { ...settings.global, typography: next },
-          };
-          return saveSettings(updated);
-        }).then(setSaved).catch(console.warn);
+        loadSettings().then((settings) => saveSettings(saveTypography(settings, hostname, next))).then(setSaved).catch(console.warn);
       }, 600);
     },
-    [prefs, sendPreview]
+    [prefs, sendPreview, hostname]
   );
 
   // Reset to defaults
@@ -71,14 +78,8 @@ export default function ReadingPanel(): React.ReactElement {
     const defaults = TypographyPrefsSchema.parse({});
     setPrefs(defaults);
     sendPreview(defaults);
-    loadSettings().then((settings) => {
-      const updated = {
-        ...settings,
-        global: { ...settings.global, typography: defaults },
-      };
-      return saveSettings(updated);
-    }).then(setSaved).catch(console.warn);
-  }, [sendPreview]);
+    loadSettings().then((settings) => saveSettings(saveTypography(settings, hostname, defaults))).then(setSaved).catch(console.warn);
+  }, [sendPreview, hostname]);
 
   if (loading) return <div className="panel-loading">Loading…</div>;
 
@@ -190,7 +191,7 @@ export default function ReadingPanel(): React.ReactElement {
         >
           Reset
         </button>
-        {saved && <span className="reading-saved">✓ Saved</span>}
+        {saved && <span className="reading-saved">✓ Saved{hostname ? ` for ${hostname}` : ""}</span>}
       </div>
     </div>
   );

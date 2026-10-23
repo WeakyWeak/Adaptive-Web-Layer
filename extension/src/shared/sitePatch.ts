@@ -4,7 +4,11 @@
 
 import { AI_FIELDS, aiField, type PlanChanges, type SettingsGroup } from "./aiFields";
 import {
+  AppearancePrefsSchema,
+  FocusPrefsSchema,
   MAX_SAVED_SELECTORS,
+  MotionPrefsSchema,
+  TypographyPrefsSchema,
   matchingSiteRule,
   normalizeHostname,
   resolveAppearance,
@@ -14,6 +18,7 @@ import {
   SiteRuleSchema,
   type Settings,
   type SiteRule,
+  type TypographyPrefs,
 } from "./settings";
 
 function emptyRule(hostname: string): SiteRule {
@@ -94,6 +99,38 @@ export function restoreSiteRule(settings: Settings, hostname: string, previous: 
   const host = normalizeHostname(hostname);
   const others = settings.siteRules.filter((item) => normalizeHostname(item.hostname) !== host);
   return { ...settings, siteRules: previous ? [...others, previous] : others };
+}
+
+/** Default values for the keys where `resolved` differs from them. */
+function pinnedDefaults<T extends object>(resolved: T, defaults: T): Partial<T> {
+  return Object.fromEntries(Object.entries(defaults).filter(([key, value]) => JSON.stringify(resolved[key as keyof T]) !== JSON.stringify(value))) as Partial<T>;
+}
+
+/**
+ * "Reset page": the site looks as it does without the extension, but the
+ * extension stays on for it, so the next change applies straight away. The
+ * site's own changes are dropped, and anything the global settings or a
+ * profile would still change here is pinned to its default for this site.
+ */
+export function resetSiteRule(settings: Settings, hostname: string): Settings {
+  const host = normalizeHostname(hostname);
+  const rule = SiteRuleSchema.parse({ hostname: host, includeSubdomains: exactSiteRule(settings, host)?.includeSubdomains ?? false });
+  const cleared = restoreSiteRule(settings, host, rule);
+  return restoreSiteRule(settings, host, {
+    ...rule,
+    typography: pinnedDefaults(resolveTypography(cleared, host), TypographyPrefsSchema.parse({})),
+    appearance: pinnedDefaults(resolveAppearance(cleared, host), AppearancePrefsSchema.parse({})),
+    focus: pinnedDefaults(resolveFocus(cleared, host), FocusPrefsSchema.parse({})),
+    motion: pinnedDefaults(resolveMotion(cleared, host), MotionPrefsSchema.parse({})),
+  });
+}
+
+/** Returns settings whose exact-host rule has `typography` merged in (the popup's Reading panel). */
+export function withSiteTypography(settings: Settings, hostname: string, typography: Partial<TypographyPrefs>): Settings {
+  const host = normalizeHostname(hostname);
+  const patched = withSitePatch(settings, host, {});
+  const rule = exactSiteRule(patched, host)!;
+  return restoreSiteRule(patched, host, { ...rule, typography: { ...rule.typography, ...typography } });
 }
 
 export function exactSiteRule(settings: Settings, hostname: string): SiteRule | undefined {

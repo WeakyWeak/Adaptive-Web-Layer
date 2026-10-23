@@ -42,6 +42,8 @@ Pages:
 - http://localhost:4173/code-highlight.html — syntax-highlighted code
 - http://localhost:4173/responsive-dynamic.html — responsive + dynamic JS content
 - http://localhost:4173/native-dark.html — native dark theme and fixed/sticky controls
+- http://localhost:4173/motion-autoplay.html — CSS and script animation, parallax, an autoplay video and a video started by script
+- http://localhost:4173/smart-header.html — brand-colour header, gradient hero, sticky bar that turns solid and a banner added late (try Smart Dark)
 - http://localhost:4173/clutter.html — article under a cookie banner, newsletter pop-up, promo bar and "Recommended" rail (try **Clean this page** in the side panel)
 
 ## AI setup (local, cloud, hybrid)
