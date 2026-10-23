@@ -89,6 +89,12 @@ describe("validateElements", () => {
     expect(validateElements(lists([], ["s1"]), snapshot).items[0]).toMatchObject({ enabled: true, protect: undefined });
   });
 
+  it("labels a hidden widget with how many copies it hides", () => {
+    const ads = { ...snapshot, blocks: [block("a1", { hints: "ad-slot", text: "Advertisement", similar: 2 })] };
+    expect(validateElements(lists(["a1"]), ads).items[0].label).toBe("div “Advertisement” + 2 more like it");
+    expect(validateElements(lists([], ["a1"]), ads).items[0].label).toBe("div “Advertisement”");
+  });
+
   it("rejects an id listed twice", () => {
     const review = validateElements(lists(["s2"], ["s2"]), snapshot);
     expect(review.items).toHaveLength(1);

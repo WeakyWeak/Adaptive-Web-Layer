@@ -28,7 +28,7 @@ import {
 } from "../shared/comprehension";
 import { cacheKey, readCache, writeCache } from "../shared/comprehensionCache";
 import { DEFAULT_TARGET, SOURCE_LANGUAGE, TRANSLATE_CHUNK_CHARS } from "../shared/languages";
-import { PageTextSchema, type UnderstandSelection } from "../shared/messages";
+import { GlossaryShownSchema, PageTextSchema, type UnderstandSelection } from "../shared/messages";
 import { formatProviderError, ProviderError, toProviderError } from "../shared/plan";
 import { ProviderRouter } from "../shared/providerRouter";
 import { cloudConsentFor, normalizeHostname, type Settings } from "../shared/settings";
@@ -164,8 +164,11 @@ export async function runPageKind(tabId: number, kind: PageKind, refresh = false
       const cached = refresh ? null : await readCache(key, GlossaryResultSchema);
       const glossary = cached ? { ...cached, cached: true, shown: true } : await glossaryOf(runner, parsed.data.text, parsed.data.title, (stage) => setStage(tabId, stage));
       if (!cached) await writeCache(key, { ...glossary, shown: false });
-      await updateState(tabId, (state) => ({ ...state, glossary }));
-      tell(tabId, { type: "SHOW_GLOSSARY", terms: glossary.terms });
+      // The page reports how often each term was underlined, so the panel can say where it is.
+      const shown = GlossaryShownSchema.safeParse(await tabMessage(tabId, { type: "SHOW_GLOSSARY", terms: glossary.terms }));
+      const counts = shown.success ? shown.data.counts : {};
+      const terms = glossary.terms.map((item) => ({ ...item, count: counts[item.term.toLowerCase()] ?? 0 }));
+      await updateState(tabId, (state) => ({ ...state, glossary: { ...glossary, terms } }));
     }
   });
 }

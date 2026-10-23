@@ -9,12 +9,12 @@ import { detectExistingDark, shouldSkipDarkTheme } from "./darkDetection";
 import { injectBundledFonts } from "./fontInjector";
 import { registerFocusOps } from "./focusOps";
 import { ElementPicker, focusCandidates, persistentSelector } from "./elementPicker";
-import { buildDomSnapshot, resolveSnapshotId } from "./domSnapshot";
+import { buildDomSnapshot, resolveSnapshotId, sameKindSelector } from "./domSnapshot";
 import { ElementOutline } from "./elementOutline";
 import { clearPreviewMarks, previewSelectors } from "./previewMarks";
 import { extractPageText } from "./pageText";
 import { SummaryCard } from "./summaryCard";
-import { GlossaryTooltip, registerComprehensionOps } from "./glossary";
+import { activeGlossaryRanges, GlossaryTooltip, registerComprehensionOps } from "./glossary";
 import { SelectionPopover } from "./selectionPopover";
 import { applyPlan, type Revert } from "../shared/registry";
 import type { ApplyContext } from "../shared/registry";
@@ -278,7 +278,14 @@ if (isRestrictedPage()) {
       } else {
         glossaryTooltip.clear();
       }
-      sendResponse({ type: "ACK", ok: true });
+      const counts: Record<string, number> = {};
+      for (const { term } of activeGlossaryRanges()) counts[term.toLowerCase()] = (counts[term.toLowerCase()] ?? 0) + 1;
+      sendResponse({ type: "GLOSSARY_SHOWN", counts });
+      return false;
+    }
+
+    if (msg.type === "GLOSSARY_REVEAL") {
+      sendResponse({ type: "ACK", ok: glossaryTooltip.reveal(msg.term) });
       return false;
     }
 
@@ -306,7 +313,12 @@ if (isRestrictedPage()) {
         const element = resolveSnapshotId(id);
         return [id, element ? persistentSelector(element) : null];
       }));
-      sendResponse({ type: "SELECTORS", selectors });
+      // Every-copy selectors, used when the item is hidden.
+      const sameKind = Object.fromEntries(msg.ids.map((id) => {
+        const element = resolveSnapshotId(id);
+        return [id, element ? sameKindSelector(element)?.selector ?? null : null];
+      }).filter(([, selector]) => selector !== null));
+      sendResponse({ type: "SELECTORS", selectors, sameKind });
       return false;
     }
 

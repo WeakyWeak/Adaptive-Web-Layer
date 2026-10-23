@@ -20,12 +20,12 @@ function Selection({ result }: { result: SelectionResult }): React.ReactElement 
   return (
     <div className="card">
       <div className="meta"><strong>{KIND_LABEL[result.kind]}</strong>{result.target && <span className="muted">→ {languageName(result.target)}</span>}<Source source={result.source} cached={result.cached} /></div>
-      <blockquote className="muted small quote">{result.original.length > 300 ? `${result.original.slice(0, 300)}…` : result.original}</blockquote>
       {result.term
         ? <p><strong>{result.term.term}:</strong> {result.term.definition}</p>
         : <p className="result-text" lang={result.kind === "translate" ? "hi" : undefined}>{result.text}</p>}
       {result.gradeLevel !== undefined && <p className="muted small">About grade {Math.round(result.gradeLevel)}</p>}
       <Notes notes={result.notes} />
+      <details><summary>Original text</summary><blockquote className="muted small quote">{result.original}</blockquote></details>
     </div>
   );
 }
@@ -67,7 +67,12 @@ export default function UnderstandPanel({ tab, settings }: SidePanelSectionProps
           ? <button disabled={!usable} onClick={() => void send({ type: "UNDERSTAND_HIDE", what: "glossary" })}>Hide glossary</button>
           : <button disabled={!usable || Boolean(running)} onClick={() => void send({ type: "UNDERSTAND_RUN", kind: "glossary" })}>Show glossary</button>}
       </div>
-      <p className="muted small">Select text on the page and press ✨ Understand to explain it simply, define it or translate it to Hindi. The page's own text is never changed.</p>
+      <ul className="muted small help">
+        <li><strong>TL;DR</strong>: 3–5 sentence summary of the article, shown at the top of the page.</li>
+        <li><strong>Glossary</strong>: the AI picks up to 12 hard words or jargon used in this article (for example "basis points"), underlines them on the page and explains each in plain English. Hover an underlined word, or press Show below, to see its meaning.</li>
+        <li><strong>Selection</strong>: select text on the page and press ✨ Understand to explain it simply, define it or translate it to Hindi.</li>
+      </ul>
+      <p className="muted small">The page's own text is never changed.</p>
       {!usable && <p className="muted">Open a regular web page to use these.</p>}
       {error && <p className="error-text" role="alert">{error}</p>}
       {running && (
@@ -92,7 +97,17 @@ export default function UnderstandPanel({ tab, settings }: SidePanelSectionProps
         <details className="card" open={state.glossary.shown}>
           <summary>Glossary ({state.glossary.terms.length} terms){state.glossary.shown ? " · underlined on the page" : ""}</summary>
           <dl className="glossary">
-            {state.glossary.terms.map((item) => <React.Fragment key={item.term}><dt>{item.term}</dt><dd>{item.definition}</dd></React.Fragment>)}
+            {state.glossary.terms.map((item) => (
+              <React.Fragment key={item.term}>
+                <dt>
+                  <span>{item.term}</span>
+                  {state.glossary!.shown && (item.count
+                    ? <><span className="chip">{item.count}× on page</span><button className="link" onClick={() => tab && chrome.tabs.sendMessage(tab.id, { type: "GLOSSARY_REVEAL", term: item.term }, () => void chrome.runtime.lastError)}>Show</button></>
+                    : <span className="chip" title="The word is in the article text, but split by formatting (for example half of it in bold or a link), so it could not be underlined.">not underlined</span>)}
+                </dt>
+                <dd>{item.definition}</dd>
+              </React.Fragment>
+            ))}
           </dl>
           <Source source={state.glossary.source} cached={state.glossary.cached} />
           <Notes notes={state.glossary.notes} />

@@ -5,7 +5,7 @@
 
 import { MAX_BLOCKS, type ProtectKind, type SnapshotBlock } from "../shared/elementPlan";
 import { type DomSnapshot } from "../shared/plan";
-import { PROTECTED_SELECTOR } from "./domUtils";
+import { getContentRegionSelector, PROTECTED_SELECTOR } from "./domUtils";
 
 // Stable id → element map, so plans can reference elements without selectors.
 const _snapshotMap = new Map<string, Element>();
@@ -50,7 +50,14 @@ const ALERTS = "[role='alert'], [role='alertdialog'], [aria-live='assertive']";
 const DIALOGS = "dialog, [role='dialog'], [role='alertdialog'], [aria-modal='true']";
 const FOCUSABLE = "a[href], button, input, select, textarea, [tabindex]";
 const SKIP_TEXT = "script, style, noscript, template, textarea, select, option, input, [contenteditable], [data-awl-overlay], [data-awl-picker]";
+// Class/id hints are cheap to read, so the whole page is scanned for them;
+// computed styles (fixed/sticky) only for the first SCAN_LIMIT elements.
 const SCAN_LIMIT = 4000;
+const HINT_SCAN_LIMIT = 25_000;
+// Widgets that repeat down a page and are safe to hide as a kind. Narrower than
+// CLUTTER_HINT: never "toc", "contents", "sidebar", "widget" or "comment".
+const SAME_KIND = /^(?:.*[_-])?(?:ad|ads|advert|advertisement|sponsor(?:ed)?|promo|promotion|banner|newsletter|subscribe|signup|cookie|consent|gdpr|related|recommend(?:ed|ations)?|share|sharing|social|popup|modal|overlay|paywall)(?:[_-].*)?$/i;
+const MAX_SAME_KIND = 40;
 // Only containers can be clutter blocks; a heading or button that happens to
 // say "newsletter" is part of a block, not one.
 const CONTAINER_TAGS = new Set(["DIV", "SECTION", "ASIDE", "HEADER", "FOOTER", "NAV", "UL", "OL", "FORM", "IFRAME", "DIALOG", "ARTICLE", "FIGURE", "TABLE", "DETAILS", "INS"]);
@@ -116,11 +123,12 @@ function collectBlocks(mainEl: Element | null, budgetTokens: number): SnapshotBl
   if (mainEl && mainEl !== body) consider(mainEl, 100);
   document.querySelectorAll(BLOCK_SELECTOR).forEach((el) => consider(el, el.matches(DIALOGS) ? 60 : 30));
   const all = body.querySelectorAll("*");
-  for (let index = 0; index < Math.min(all.length, SCAN_LIMIT); index++) {
+  for (let index = 0; index < Math.min(all.length, HINT_SCAN_LIMIT); index++) {
     const el = all[index];
     if (!CONTAINER_TAGS.has(el.tagName)) continue;
     if (CLUTTER_HINT.test(hintsOf(el))) consider(el, 50);
-    else if (isRepeatedGroup(el)) consider(el, 15);
+    else if (index < SCAN_LIMIT && isRepeatedGroup(el)) consider(el, 15);
+    if (index >= SCAN_LIMIT) continue;
     const position = getComputedStyle(el).position;
     if (position === "fixed" || position === "sticky") consider(el, 55);
   }
@@ -141,8 +149,12 @@ function collectBlocks(mainEl: Element | null, budgetTokens: number): SnapshotBl
   picked.sort((a, b) => b.score - a.score || before(a.el, b.el));
 
   const kept: Array<{ el: Element; block: SnapshotBlock }> = [];
+  const kinds = new Set<string>();
   let used = 0;
   for (const { el, style, rect } of picked.slice(0, MAX_BLOCKS)) {
+    // One block stands for every copy of a widget ("+ N more like it").
+    const kind = sameKindSelector(el, mainEl);
+    if (kind && kinds.has(kind.selector)) continue;
     const fixed = style.position === "fixed" || style.position === "sticky";
     const top = fixed ? rect.top : rect.top + window.scrollY;
     const links = Array.from(el.querySelectorAll("a")).reduce((sum, link) => sum + (link.textContent?.trim().length ?? 0), 0);
@@ -161,9 +173,11 @@ function collectBlocks(mainEl: Element | null, budgetTokens: number): SnapshotBl
       protect: protectionOf(el),
       main: mainEl !== null && mainEl !== body && el.contains(mainEl),
     };
+    if (kind) block.similar = kind.count - 1;
     const cost = estimateTokens(JSON.stringify(block)) + 4;
     if (used + cost > budgetTokens) break;
     used += cost;
+    if (kind) kinds.add(kind.selector);
     kept.push({ el, block });
   }
 
@@ -175,6 +189,25 @@ function collectBlocks(mainEl: Element | null, budgetTokens: number): SnapshotBl
     for (let parent = el.parentElement; parent && !within; parent = parent.parentElement) within = ids.get(parent);
     return within ? { ...block, within } : block;
   });
+}
+
+/**
+ * A selector for every copy of the same clutter widget (e.g. all `div.ad-slot`),
+ * so hiding one hides the rest, including copies a page loads while scrolling.
+ * Only for clearly-clutter class names, 2–40 copies, none of which is or
+ * contains the main content, navigation or a form.
+ */
+export function sameKindSelector(el: Element, mainEl: Element | null = document.querySelector(getContentRegionSelector(false))): { selector: string; count: number } | null {
+  const tag = el.tagName.toLowerCase();
+  for (const token of Array.from(el.classList)) {
+    if (!/^[A-Za-z][\w-]{1,40}$/.test(token) || (token.match(/\d/g)?.length ?? 0) > 2 || !SAME_KIND.test(token)) continue;
+    const selector = `${tag}.${CSS.escape(token)}`;
+    const matches = Array.from(document.querySelectorAll(selector));
+    if (matches.length < 2 || matches.length > MAX_SAME_KIND) continue;
+    const unsafe = matches.some((match) => (mainEl && mainEl !== document.body && match.contains(mainEl)) || match.matches(NAVIGATION) || match.querySelector(`${NAVIGATION}, form`) || match.closest(NAVIGATION));
+    if (!unsafe) return { selector, count: matches.length };
+  }
+  return null;
 }
 
 // Estimate token count (rough: 1 token ≈ 4 chars)

@@ -177,11 +177,12 @@ async function savedSelectors(tabId: number, items: readonly ElementItem[]): Pro
   const enabled = items.filter((item) => item.enabled);
   const elements: SiteElements = { hide: [], dim: [], highlight: [] };
   if (enabled.length === 0) return { elements, unsaved: [] };
-  const response = await tabMessage<{ selectors?: Record<string, string | null> }>(tabId, { type: "RESOLVE_SELECTORS", ids: enabled.map((item) => item.id) });
+  const response = await tabMessage<{ selectors?: Record<string, string | null>; sameKind?: Record<string, string> }>(tabId, { type: "RESOLVE_SELECTORS", ids: enabled.map((item) => item.id) });
   if (!response?.selectors) return null;
   const unsaved: string[] = [];
   for (const item of enabled) {
-    const selector = response.selectors[item.id];
+    // A hidden clutter widget is saved as "every copy of it", so copies loaded later stay hidden too.
+    const selector = (item.action === "hide" ? response.sameKind?.[item.id] : undefined) ?? response.selectors[item.id];
     if (selector) elements[item.action].push(selector); else unsaved.push(item.label);
   }
   return { elements, unsaved };

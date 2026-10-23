@@ -41,6 +41,8 @@ export const SnapshotBlockSchema = z.object({
   /** Share of the block's text that is link text, 0–1. */
   linkDensity: z.number().min(0).max(1).default(0),
   protect: ProtectKindSchema.optional(),
+  /** Other copies of the same clutter widget on the page (ad slots, share bars); hidden together with it. */
+  similar: z.number().int().min(0).max(40).optional(),
   /** The main content region or one of its ancestors. */
   main: z.boolean().default(false),
   /** Id of the nearest enclosing block, if any. */
@@ -159,7 +161,8 @@ export function validateElements(elements: Elements | undefined, snapshot: DomSn
         hiddenArea += area;
       }
       const protect = action === "hide" ? block.protect : undefined;
-      review.items.push({ id, action, label: blockLabel(block), protect, enabled: !protect });
+      const label = action === "hide" && block.similar ? `${blockLabel(block)} + ${block.similar} more like it` : blockLabel(block);
+      review.items.push({ id, action, label: label.slice(0, 160), protect, enabled: !protect });
     }
   }
   // A hide inside another hidden block changes nothing and would only add a

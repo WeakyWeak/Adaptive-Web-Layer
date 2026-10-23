@@ -111,6 +111,17 @@ export class GlossaryTooltip {
     this.shown = null;
   }
 
+  /** Scroll to the first place a term is underlined and show its definition; false if it is not on the page. */
+  reveal(term: string): boolean {
+    const item = activeGlossaryRanges().find((entry) => entry.term.toLowerCase() === term.toLowerCase());
+    if (!item) return false;
+    item.range.startContainer.parentElement?.scrollIntoView({ block: "center", behavior: "auto" });
+    this.shown = null;
+    this.revealedAt = Date.now();
+    this.show(item);
+    return true;
+  }
+
   private show(item: TermRange): void {
     if (!this.panel || this.shown === item) return;
     const definition = this.definitions.get(item.term.toLowerCase());
@@ -123,7 +134,10 @@ export class GlossaryTooltip {
     this.panel.hidden = false;
   }
 
+  private revealedAt = 0;
+
   private hide = (): void => {
+    if (Date.now() - this.revealedAt < 400) return; // the scroll that reveal() itself caused
     if (this.panel) this.panel.hidden = true;
     this.shown = null;
   };

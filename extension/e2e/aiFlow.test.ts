@@ -136,6 +136,9 @@ test("clean this page: preview, confirm protected items, apply, reload, undo (de
     await expect.poll(() => jobStatus(panel, tabId)).toBe("preview");
     await expect.poll(() => display(page, ".promo-bar")).toBe("none");
     expect(await display(page, ".recommended-rail")).toBe("none");
+    // One ad item hides every copy, including the one the page adds later.
+    await page.locator("#late-ad").waitFor({ state: "attached" });
+    expect(await page.locator(".ad-slot").evaluateAll((ads) => ads.map((ad) => getComputedStyle(ad).display))).toEqual(["none", "none", "none"]);
     // Protected: the cookie dialog and the newsletter form wait for an explicit OK.
     expect(await display(page, "#cookie-banner")).not.toBe("none");
     expect(await display(page, ".newsletter-overlay")).not.toBe("none");
@@ -165,11 +168,13 @@ test("clean this page: preview, confirm protected items, apply, reload, undo (de
     // Saved selectors, no model involved: the job record is untouched by the reload.
     for (const selector of [".promo-bar", ".recommended-rail", "#cookie-banner", ".newsletter-overlay"]) await expect.poll(() => display(page, selector)).toBe("none");
     for (const selector of ["nav", ".toc", "article"]) expect(await display(page, selector)).not.toBe("none");
+    await page.locator("#late-ad").waitFor({ state: "attached" });
+    expect(await display(page, "#late-ad")).toBe("none");
     const saved = await worker.evaluate(async (id) => new Promise((resolve) => chrome.tabs.sendMessage(id, { type: "CHECK_SAVED_SELECTORS" }, resolve)), tabId);
-    expect(saved).toEqual({ type: "SAVED_SELECTORS", total: 4, stale: [] });
+    expect(saved).toEqual({ type: "SAVED_SELECTORS", total: 5, stale: [] });
 
     expect((await send(panel, { type: "AI_UNDO", tabId })).ok).toBe(true);
-    for (const selector of [".promo-bar", ".recommended-rail", "#cookie-banner", ".newsletter-overlay"]) await expect.poll(() => display(page, selector)).not.toBe("none");
+    for (const selector of [".promo-bar", ".recommended-rail", "#cookie-banner", ".newsletter-overlay", ".ad-slot"]) await expect.poll(() => display(page, selector)).not.toBe("none");
   } finally {
     await context.close();
   }

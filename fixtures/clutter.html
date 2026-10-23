@@ -18,6 +18,7 @@
     .site-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 24px; background: #0f3d5e; color: #fff; }
     .site-header a { color: #dbeafe; margin-left: 16px; text-decoration: none; }
     .logo { font: 700 20px system-ui, sans-serif; }
+    .ad-slot { margin: 18px 0; padding: 28px 16px; background: #fef3c7; border: 1px dashed #d97706; color: #92400e; font: 14px system-ui, sans-serif; text-align: center; }
     .promo-bar { position: sticky; top: 0; z-index: 5; display: flex; gap: 12px; align-items: center; justify-content: center; padding: 10px; background: #f97316; color: #fff; font: 600 15px system-ui, sans-serif; }
     .promo-bar a { color: #fff; }
     .promo-bar button { background: none; border: 1px solid #fff; color: #fff; border-radius: 4px; }
@@ -78,6 +79,7 @@
         <p class="byline">By A. Hydrologist · 9 min read</p>
         <h2 id="start">How a bend begins</h2>
         <p>Almost no natural river runs straight for long. A tiny disturbance — a fallen tree, a patch of softer bank, a sandbar — nudges the fastest water toward one side of the channel. That side erodes a little faster than the other, and the channel begins to curve.</p>
+        <div class="ad-slot" aria-label="Advertisement"><span>Advertisement</span> · Riverside kayak rentals, 20% off this weekend</div>
         <p>On the inside of the curve the water slows down and drops sediment, building a gentle slope called a point bar. On the outside the faster current scours the bank, which becomes steep and undercut. Over years the whole bend migrates sideways across the valley floor.</p>
         <h2 id="feedback">The feedback loop</h2>
         <p>Once a bend exists it tends to grow. Water flowing around a curve develops a corkscrew motion called secondary flow: surface water is pushed toward the outer bank while water near the bed sweeps toward the inner bank, carrying sediment with it. The outer bank erodes, the inner bank builds up, and the curve sharpens.</p>
@@ -86,6 +88,7 @@
         <p>When the river takes the shortcut, the abandoned loop is sealed off by sediment and becomes a crescent-shaped oxbow lake. Oxbow lakes slowly fill with silt and plants, turning into wetlands that are rich habitats for birds, amphibians and fish.</p>
         <p>Geologists read old meander scars and oxbows like tree rings: they record where the river has been and how quickly its channel has moved across the floodplain.</p>
         <h2 id="people">Rivers and people</h2>
+        <div class="ad-slot" aria-label="Advertisement"><span>Advertisement</span> · Riverside kayak rentals, 20% off this weekend</div>
         <p>Meandering rivers deposit fertile soil across their floodplains, which is why so many early farming societies grew up beside them. The same restlessness makes them hard neighbours: a river that moves a few metres a year can swallow fields, roads and buildings.</p>
         <p>Engineers once straightened many rivers to speed up shipping and drain land. Straightened channels often flood worse downstream, so restoration projects now give rivers room to meander again.</p>
       </article>
@@ -128,5 +131,13 @@
       <button type="button" class="no-thanks">No thanks</button>
     </div>
   </div>
+  <script>
+    // A third ad arrives later, the way many sites load ads while you scroll.
+    setTimeout(() => {
+      const late = document.querySelector(".ad-slot").cloneNode(true);
+      late.id = "late-ad";
+      document.querySelector("#people").before(late);
+    }, 1500);
+  </script>
 </body>
 </html>

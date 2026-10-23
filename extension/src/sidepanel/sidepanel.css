@@ -110,9 +110,12 @@ details summary { cursor: pointer; color: var(--muted); font-size: 12px; }
 
 /* P08: Understand this page */
 .understand-panel { display: flex; flex-direction: column; gap: 6px; }
-.quote { margin: 0; padding: 2px 8px; border-left: 3px solid var(--border); max-height: 80px; overflow: auto; }
+.quote { margin: 6px 0 0; padding: 2px 8px; border-left: 3px solid var(--border); max-height: 160px; overflow: auto; }
 .result-text { margin: 0; white-space: pre-wrap; }
 .result-text[lang="hi"] { font-size: 15px; line-height: 1.7; }
 .glossary { margin: 6px 0; }
 .glossary dt { font-weight: 600; }
 .glossary dd { margin: 0 0 6px; color: var(--muted); }
+.help { margin: 0; padding-left: 16px; display: flex; flex-direction: column; gap: 3px; }
+.glossary dt { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+button.link { padding: 0 6px; font-size: 12px; }

@@ -12,20 +12,41 @@ import { selectionText } from "./pageText";
 import { createShadowHost, el, SOURCE_LABEL } from "./shadowHost";
 
 const CSS = `
-  .panel { position: absolute; padding: 8px; max-width: 420px; }
-  .row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
-  .open { padding: 3px 9px; font-weight: 600; }
-  h3 { margin: 0 0 6px; font-size: 13px; }
-  blockquote { margin: 0 0 8px; padding: 4px 8px; border-left: 3px solid #c7d2fe; max-height: 90px; overflow: auto; }
-  .result { margin: 0 0 8px; max-height: 260px; overflow: auto; white-space: pre-wrap; }
-  .result[lang="hi"] { font-size: 16px; line-height: 1.7; }
-  .error { color: #b91c1c; }
-  @media (prefers-color-scheme: dark) { .error { color: #fca5a5; } }
+  .panel { position: absolute; box-sizing: border-box; }
+  .toolbar { display: inline-flex; gap: 4px; padding: 4px; border-radius: 999px; white-space: nowrap; }
+  .toolbar button { border-radius: 999px; padding: 4px 12px; }
+  .open { font-weight: 600; }
+  .card { width: min(400px, calc(100vw - 24px)); overflow: hidden; }
+  .head { display: flex; align-items: center; gap: 8px; padding: 10px 10px 8px 14px; border-bottom: 1px solid #e5e7eb; }
+  .head h3 { flex: 1; margin: 0; font-size: 14px; font-weight: 600; }
+  .x { border: none; background: transparent; color: inherit; font-size: 18px; line-height: 1; padding: 2px 8px; }
+  .x:hover { background: rgba(127, 127, 127, .15); }
+  .body { padding: 12px 14px; max-height: min(50vh, 380px); overflow: auto; }
+  .result { margin: 0; font-size: 15px; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .result[lang="hi"] { font-size: 17px; line-height: 1.85; }
+  .term { font-weight: 600; }
+  .original { margin-top: 12px; }
+  .original summary { cursor: pointer; font-size: 12px; color: #6b7280; }
+  blockquote { margin: 6px 0 0; padding: 4px 10px; border-left: 3px solid #c7d2fe; font-size: 13px; color: #4b5563; max-height: 120px; overflow: auto; overflow-wrap: anywhere; }
+  .note { margin: 10px 0 0; font-size: 12px; color: #6b7280; }
+  .foot { display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-top: 1px solid #e5e7eb; }
+  .foot .chip { margin-right: auto; }
+  .error { margin: 0; color: #b91c1c; font-weight: 600; }
+  .loading { display: flex; align-items: center; gap: 10px; margin: 0; color: #4b5563; }
+  .spinner { width: 16px; height: 16px; border-radius: 50%; border: 2px solid #c7d2fe; border-top-color: #4f46e5; animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-color-scheme: dark) {
+    .head, .foot { border-color: #374151; }
+    blockquote { color: #d1d5db; border-color: #4338ca; }
+    .original summary, .note, .loading { color: #9ca3af; }
+    .error { color: #fca5a5; }
+  }
 `;
-const TITLE: Record<SelectionKind, string> = { simplify: "Explained simply", define: "Definition", translate: "Translation" };
+const TITLE: Record<SelectionKind, string> = { simplify: "✨ Explained simply", define: "📖 Definition", translate: "🌐 Hindi translation" };
 const DEFINE_MAX_WORDS = 8;
 
-interface Captured { text: string; context: string; plain: string; x: number; y: number }
+/** Page coordinates: x and y below the selection's end, top above its start. */
+interface Captured { text: string; context: string; plain: string; x: number; y: number; top: number }
 export interface SelectionError { code: string; message: string; hint: string }
 
 export class SelectionPopover {
@@ -58,30 +79,30 @@ export class SelectionPopover {
     if (!retried && this.pending?.id !== requestId) return;
     const kind = result?.kind ?? this.pending?.kind ?? "simplify";
     this.pending = null;
-    const body: Array<Node | string> = [el("h3", {}, TITLE[kind])];
+    const body: Array<Node | string> = [];
+    const foot: Array<Node | string> = [];
     const original = result?.original ?? this.captured?.plain ?? "";
-    if (original) body.push(el("blockquote", { "aria-label": "Original text" }, original.length > 280 ? `${original.slice(0, 280)}…` : original));
     if (result) {
-      if (result.term) body.push(el("p", { class: "result" }, el("strong", {}, `${result.term.term}: `), result.term.definition));
+      if (result.term) body.push(el("p", { class: "result" }, el("span", { class: "term" }, `${result.term.term}: `), result.term.definition));
       else body.push(el("p", { class: "result", ...(result.kind === "translate" ? { lang: "hi" } : {}) }, result.text ?? ""));
-      for (const note of result.notes) body.push(el("p", { class: "muted" }, note));
-      const label = `${SOURCE_LABEL[result.source] ?? result.source}${result.gradeLevel ? ` · about grade ${Math.round(result.gradeLevel)}` : ""}${result.cached ? " · saved result" : ""}`;
+      for (const note of result.notes) body.push(el("p", { class: "note" }, note));
+      const label = `${SOURCE_LABEL[result.source] ?? result.source}${result.gradeLevel ? ` · grade ${Math.round(result.gradeLevel)}` : ""}${result.cached ? " · saved" : ""}`;
       const copy = el("button", { type: "button" }, "Copy");
-      copy.addEventListener("click", () => void navigator.clipboard?.writeText(result.term ? `${result.term.term}: ${result.term.definition}` : result.text ?? ""));
-      body.push(el("div", { class: "row" }, el("span", { class: "chip" }, label), copy, this.closeButton()));
+      copy.addEventListener("click", () => {
+        void navigator.clipboard?.writeText(result.term ? `${result.term.term}: ${result.term.definition}` : result.text ?? "").then(() => { copy.textContent = "Copied"; });
+      });
+      foot.push(el("span", { class: "chip" }, label), copy);
     } else if (error) {
-      body.push(el("p", { class: "error", role: "alert" }, error.message), el("p", { class: "muted" }, error.hint));
-      const row = el("div", { class: "row" });
+      body.push(el("p", { class: "error", role: "alert" }, error.message), el("p", { class: "note" }, error.hint));
+      if (error.code === "consent-required") body.push(el("p", { class: "note" }, "Open the side panel (toolbar → Adaptive Web Layer → AI assistant) to allow cloud AI for this site."));
       if (kind === "translate" && error.code === "unsupported" && this.captured) {
         const local = el("button", { type: "button" }, "Use the local model (lower quality)");
         local.addEventListener("click", () => this.run("translate", true));
-        row.append(local);
+        foot.push(local);
       }
-      if (error.code === "consent-required") body.push(el("p", { class: "muted" }, "Open the side panel (toolbar → Adaptive Web Layer → AI assistant) to allow cloud AI for this site."));
-      row.append(this.closeButton());
-      body.push(row);
     }
-    this.render(body, retried && !this.host);
+    if (original) body.push(el("details", { class: "original" }, el("summary", {}, "Original text"), el("blockquote", {}, original)));
+    this.renderCard(TITLE[kind], body, foot, retried && !this.host);
   }
 
   private onSelectEnd = (event: MouseEvent): void => {
@@ -109,17 +130,18 @@ export class SelectionPopover {
     if (plain.length < 2) return;
     const rects = range.getClientRects();
     const rect = rects[rects.length - 1] ?? range.getBoundingClientRect();
-    this.captured = { text, context, plain, x: rect.left + window.scrollX, y: rect.bottom + window.scrollY + 6 };
+    const first = rects[0] ?? rect;
+    this.captured = { text, context, plain, x: rect.left + window.scrollX, y: rect.bottom + window.scrollY + 6, top: first.top + window.scrollY - 6 };
     this.pending = null;
     const open = el("button", { type: "button", class: "open", "aria-label": "Understand the selected text", title: "Explain, define or translate the selection" }, "✨ Understand");
     open.addEventListener("click", () => this.showActions());
-    this.render([open]);
+    this.renderToolbar([open]);
   }
 
   private showActions(): void {
     if (!this.captured) return;
     if (this.captured.plain.length > MAX_SELECTION_CHARS) {
-      this.render([el("p", { class: "muted" }, `Select at most ${MAX_SELECTION_CHARS} characters (this selection has ${this.captured.plain.length}).`), this.closeButton()]);
+      this.renderCard("Selection too long", [el("p", { class: "note" }, `Select at most ${MAX_SELECTION_CHARS} characters (this selection has ${this.captured.plain.length}).`)], []);
       return;
     }
     const button = (label: string, kind: SelectionKind) => {
@@ -128,10 +150,10 @@ export class SelectionPopover {
       return element;
     };
     const target = TARGET_LANGUAGES.find((language) => language.code === DEFAULT_TARGET);
-    const actions = el("div", { class: "row", role: "group", "aria-label": "Understand the selection" }, button("Explain simply", "simplify"));
+    const actions = el("div", { class: "toolbar-row", role: "group", "aria-label": "Understand the selection", style: "display:contents" }, button("Explain simply", "simplify"));
     if (this.captured.plain.split(/\s+/).length <= DEFINE_MAX_WORDS) actions.append(button("Define", "define"));
-    actions.append(button(`Translate to ${target?.nativeName ?? DEFAULT_TARGET}`, "translate"), this.closeButton());
-    this.render([actions]);
+    actions.append(button(`Translate to ${target?.nativeName ?? DEFAULT_TARGET}`, "translate"));
+    this.renderToolbar([actions]);
     actions.querySelector("button")?.focus();
   }
 
@@ -140,30 +162,60 @@ export class SelectionPopover {
     const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
     this.pending = { id, kind };
     this.send({ requestId: id, kind, text: this.captured.text, context: this.captured.context, target: kind === "translate" ? DEFAULT_TARGET : undefined, local: local || undefined });
-    this.render([el("p", { class: "muted", role: "status" }, `${TITLE[kind]}: working…`), this.closeButton()]);
+    this.renderCard(TITLE[kind], [el("p", { class: "loading", role: "status" }, el("span", { class: "spinner", "aria-hidden": "true" }), "Working…")], []);
   }
 
-  private closeButton(): HTMLButtonElement {
-    const close = el("button", { type: "button" }, "Close");
-    close.addEventListener("click", () => this.close());
-    return close;
-  }
-
-  private render(children: Array<Node | string>, floating = false): void {
+  private mount(): HTMLElement {
     if (!this.host) {
       const { host, root } = createShadowHost("selection", CSS, "position:absolute;left:0;top:0;width:0;height:0;z-index:2147483647;");
-      this.panel = el("div", { class: "panel", role: "dialog", "aria-label": "Understand selection" });
+      this.panel = el("div", { class: "panel" });
       root.append(this.panel);
       document.documentElement.append(host);
       this.host = host;
     }
-    const panel = this.panel!;
+    return this.panel!;
+  }
+
+  /** The small pill: "✨ Understand", then the three actions. */
+  private renderToolbar(children: Array<Node | string>): void {
+    const panel = this.mount();
+    panel.className = "panel toolbar";
+    panel.setAttribute("role", "toolbar");
+    panel.setAttribute("aria-label", "Understand selection");
     panel.replaceChildren(...children);
-    const width = Math.min(420, window.innerWidth - 24);
-    const x = floating || !this.captured ? window.scrollX + window.innerWidth - width - 16 : Math.min(this.captured.x, window.scrollX + window.innerWidth - width - 12);
-    const y = floating || !this.captured ? window.scrollY + 16 : this.captured.y;
-    panel.style.left = `${Math.max(window.scrollX + 8, x)}px`;
-    panel.style.top = `${y}px`;
+    this.place(panel, false);
+  }
+
+  /** The result card: title and close in the header, result in the body, actions in the footer. */
+  private renderCard(title: string, body: Array<Node | string>, foot: Array<Node | string>, floating = false): void {
+    const panel = this.mount();
+    panel.className = "panel card";
+    panel.setAttribute("role", "dialog");
+    panel.setAttribute("aria-label", title);
+    const close = el("button", { type: "button", class: "x", "aria-label": "Close" }, "×");
+    close.addEventListener("click", () => this.close());
+    const parts: Node[] = [el("div", { class: "head" }, el("h3", {}, title), close), el("div", { class: "body" }, ...body)];
+    if (foot.length) parts.push(el("div", { class: "foot" }, ...foot));
+    panel.replaceChildren(...parts);
+    this.place(panel, floating);
+  }
+
+  /** Below the selection if it fits, otherwise above it; always inside the viewport horizontally. */
+  private place(panel: HTMLElement, floating: boolean): void {
+    const width = panel.offsetWidth;
+    const height = panel.offsetHeight;
+    const minX = window.scrollX + 12;
+    const maxX = window.scrollX + window.innerWidth - width - 12;
+    if (floating || !this.captured) {
+      panel.style.left = `${Math.max(minX, maxX - 4)}px`;
+      panel.style.top = `${window.scrollY + 16}px`;
+      return;
+    }
+    const below = this.captured.y;
+    const fitsBelow = below + height <= window.scrollY + window.innerHeight - 8;
+    const above = this.captured.top - height;
+    panel.style.left = `${Math.max(minX, Math.min(this.captured.x, maxX))}px`;
+    panel.style.top = `${fitsBelow || above < window.scrollY + 8 ? below : above}px`;
   }
 
   close(): void {

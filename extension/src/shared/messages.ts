@@ -115,7 +115,7 @@ export type SetPreview = z.infer<typeof SetPreviewSchema>;
 // ── P07: element plans (background/side panel → content) ───────────────────
 /** Turn snapshot ids into selectors that survive a reload (for Apply). */
 export const ResolveSelectorsSchema = z.object({ type: z.literal("RESOLVE_SELECTORS"), ids: z.array(z.string().min(1).max(32)).max(60) });
-export const SelectorsSchema = z.object({ type: z.literal("SELECTORS"), selectors: z.record(z.string().nullable()) });
+export const SelectorsSchema = z.object({ type: z.literal("SELECTORS"), selectors: z.record(z.string().nullable()), sameKind: z.record(z.string()).default({}) });
 /** Outline one snapshot block on the page (null clears the outline). */
 export const OutlineElementSchema = z.object({ type: z.literal("OUTLINE_ELEMENT"), id: z.string().min(1).max(32).nullable() });
 /** Which saved element selectors no longer match anything on this page. */
@@ -171,6 +171,9 @@ export const GetPageTextSchema = z.object({ type: z.literal("GET_PAGE_TEXT") });
 export const PageTextSchema = z.object({ type: z.literal("PAGE_TEXT"), url: z.string(), title: z.string(), text: z.string().max(400_000), skippedCode: z.number() });
 export const ShowSummarySchema = z.object({ type: z.literal("SHOW_SUMMARY"), summary: SummaryResultSchema.nullable() });
 export const ShowGlossarySchema = z.object({ type: z.literal("SHOW_GLOSSARY"), terms: z.array(GlossaryTermSchema).nullable() });
+export const GlossaryShownSchema = z.object({ type: z.literal("GLOSSARY_SHOWN"), counts: z.record(z.number().int().min(0)) });
+// Side panel → content: scroll to a term and show its definition.
+export const GlossaryRevealSchema = z.object({ type: z.literal("GLOSSARY_REVEAL"), term: z.string().min(1).max(60) });
 export const SelectionResultMessageSchema = z.object({
   type: z.literal("SELECTION_RESULT"),
   requestId: z.string().max(64),
@@ -229,6 +232,8 @@ export const AnyMessageSchema = z.discriminatedUnion("type", [
   PageTextSchema,
   ShowSummarySchema,
   ShowGlossarySchema,
+  GlossaryShownSchema,
+  GlossaryRevealSchema,
   SelectionResultMessageSchema,
   AckSchema,
 ]);

@@ -75,6 +75,11 @@ test("TL;DR card, glossary underlines and Explain simply (Demo mode) leave the p
     await send(panel, { type: "UNDERSTAND_RUN", tabId, kind: "glossary" });
     await expect.poll(async () => (await state(panel, tabId))?.glossary?.shown).toBe(true);
     await expect.poll(() => page.evaluate(() => CSS.highlights.get("awl-glossary")?.size ?? 0)).toBeGreaterThan(0);
+    // The panel learns where each term is, and "Show" scrolls to it.
+    const glossary = (await state(panel, tabId))!.glossary!.terms as Array<{ term: string; count?: number }>;
+    const found = glossary.find((item) => (item.count ?? 0) > 0)!;
+    expect(found).toBeTruthy();
+    expect(await panel.evaluate(([id, term]) => new Promise((resolve) => chrome.tabs.sendMessage(id as number, { type: "GLOSSARY_REVEAL", term }, resolve)), [tabId, found.term])).toMatchObject({ ok: true });
     await send(panel, { type: "UNDERSTAND_HIDE", tabId, what: "glossary" });
     await expect.poll(() => page.evaluate(() => CSS.highlights.has("awl-glossary"))).toBe(false);
 

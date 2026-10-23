@@ -3,7 +3,7 @@
 // layout, so element boxes are stubbed per element.
 
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { buildDomSnapshot, resolveSnapshotId } from "../content/domSnapshot";
+import { buildDomSnapshot, resolveSnapshotId, sameKindSelector } from "../content/domSnapshot";
 import { persistentSelector } from "../content/elementPicker";
 import { clearPreviewMarks, previewSelectors } from "../content/previewMarks";
 import { DomSnapshotSchema } from "../shared/plan";
@@ -121,5 +121,35 @@ describe("preview markers", () => {
     expect(selectors.hide[0]).toMatch(/^\[data-awl-preview="[\w-]+-s\d+"\]$/);
     clearPreviewMarks();
     expect(document.querySelector("[data-awl-preview]")).toBeNull();
+  });
+});
+
+describe("every copy of a clutter widget", () => {
+  const ADS = `<div class="ad-slot">Ad one</div><div class="ad-slot">Ad two</div><div class="ad-slot">Ad three</div>`;
+
+  it("selects all copies of an ad slot and lists them as one block", () => {
+    document.body.innerHTML = PAGE.replace("<article>", `<article>${ADS}`);
+    const ad = document.querySelector(".ad-slot")!;
+    expect(sameKindSelector(ad)).toEqual({ selector: "div.ad-slot", count: 3 });
+    const snapshot = buildDomSnapshot(false);
+    const ads = snapshot.blocks.filter((block) => block.hints.includes("ad-slot"));
+    expect(ads).toHaveLength(1);
+    expect(ads[0].similar).toBe(2);
+  });
+
+  it("never generalises navigation, forms, the main content, or vague names like widget/sidebar", () => {
+    document.body.innerHTML = `<nav><div class="share">a</div></nav><div class="share">b</div>
+      <div class="widget">c</div><div class="widget">d</div>
+      <div class="promo"><main>article</main></div><div class="promo">e</div>
+      <div class="newsletter"><form></form></div><div class="newsletter">f</div>`;
+    const main = document.querySelector("main");
+    for (const selector of [".share", ".widget", ".promo", ".newsletter"]) expect(sameKindSelector(document.querySelectorAll(selector)[1], main)).toBeNull();
+  });
+
+  it("needs at least two and at most forty copies", () => {
+    document.body.innerHTML = `<div class="ad-slot">only</div>`;
+    expect(sameKindSelector(document.querySelector(".ad-slot")!)).toBeNull();
+    document.body.innerHTML = Array(41).fill(`<div class="ad-slot">x</div>`).join("");
+    expect(sameKindSelector(document.querySelector(".ad-slot")!)).toBeNull();
   });
 });

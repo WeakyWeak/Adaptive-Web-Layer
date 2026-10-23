@@ -95,7 +95,12 @@ export const ResultSourceSchema = z.enum(["local", "cloud", "sarvam", "demo"]);
 export type ResultSource = z.infer<typeof ResultSourceSchema>;
 const Meta = { source: ResultSourceSchema, cached: z.boolean().default(false), notes: z.array(z.string()).default([]) };
 
-export const GlossaryTermSchema = z.object({ term: z.string().max(60), definition: z.string().max(300) });
+export const GlossaryTermSchema = z.object({
+  term: z.string().max(60),
+  definition: z.string().max(300),
+  /** How many places on the page were underlined (0: in the text, but split by formatting). */
+  count: z.number().int().min(0).optional(),
+});
 
 export const SummaryResultSchema = z.object({
   bullets: z.array(z.string().max(600)).max(5),
