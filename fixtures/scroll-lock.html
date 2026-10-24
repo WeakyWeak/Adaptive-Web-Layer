@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Scroll lock fixture</title>
+<!-- Fixture: a newsletter pop-up that locks scrolling (overflow hidden on html
+     and body) while it is open, as many sites do. Hiding the pop-up must give
+     scrolling back; the article must stay. -->
+<style>
+  html.modal-open, html.modal-open body { overflow: hidden; }
+  body { margin: 0; font: 18px/1.6 Georgia, serif; }
+  article { max-width: 680px; margin: 40px auto; }
+  .nl-modal { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(0, 0, 0, .6); }
+  .nl-modal .box { background: #fff; padding: 32px; border-radius: 8px; }
+</style>
+</head>
+<body>
+<article>
+  <h1>River Walks of the North</h1>
+  <script>for (let i = 1; i <= 40; i++) document.write(`<p>Paragraph ${i}: the path follows the river past old mills, wooden bridges and quiet meadows where herons wait in the shallows.</p>`);</script>
+</article>
+<div class="nl-modal" role="dialog" aria-label="Newsletter"><div class="box"><p>Get our weekly walks by email.</p><a href="#">No thanks</a></div></div>
+<script>document.documentElement.classList.add("modal-open");</script>
+</body>
+</html>

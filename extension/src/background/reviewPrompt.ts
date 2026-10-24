@@ -28,7 +28,8 @@ You get the reader's request, their current settings, the local model's DRAFT (e
 
 Correct clear mistakes only:
 - "drop" draft items that hide useful content (the article or part of it, a table of contents, navigation, figure captions, the page's own controls), that ignore the request, or that make reading harder. Give a short reason each.
-  A block marked "in the article" is part of what the reader came for: drop any hide or dim of it unless it is plainly an ad, a promo, a sign-up box, or comments the reader asked to hide.
+  Inside the article (blocks marked "in the article"), the article's own text, headings, figures, tables, code and table of contents are content: drop any hide or dim of them.
+  When the reader asks to clean the page, widgets placed in or after the article are clutter, not content: share or social buttons, author bio boxes ("about the author"), related or recommended posts, newsletter or sign-up boxes, ads and promos, tag lists. Keep those hides unless the reader asked to keep them. Comments are hidden only if the reader mentions comments.
 - "add" what the draft clearly missed: clutter blocks to hide, dim or highlight (ids from BLOCKS), or settings that fix a measured problem the request is about.
 - "missedRegions": clutter visible in the BEFORE screenshot that has no numbered box; give its position in % of the screenshot. At most 3.
 - "verdict": "approve" when the draft needs no change (then drop, add and missedRegions stay empty), otherwise "revise".

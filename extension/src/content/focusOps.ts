@@ -65,6 +65,32 @@ function nonReadingCandidates(root: Document = document): Element[] {
   return [...new Set([...besideMain(main, root), ...landmarks])];
 }
 
+// Pop-ups often lock the page's scrolling (overflow: hidden on html or body)
+// while they are open. Hiding the pop-up with CSS leaves that lock behind, so
+// the page looks frozen. When a hidden element is an overlay and the page is
+// taller than the window but cannot scroll, scrolling is given back for as
+// long as the overlay stays hidden.
+export const SCROLL_UNLOCK = "data-awl-scroll-unlock";
+const OVERLAY = "dialog, [role='dialog'], [role='alertdialog'], [aria-modal='true']";
+
+function isOverlay(element: Element): boolean {
+  return element.matches(OVERLAY) || getComputedStyle(element).position === "fixed";
+}
+
+export function scrollUnlockCss(selectors: readonly string[]): string | null {
+  if (typeof document === "undefined" || !document.body) return null;
+  const root = document.documentElement;
+  const overlay = selectors.some((selector) => {
+    try { return Array.from(document.querySelectorAll(selector)).some(isOverlay); } catch { return false; }
+  });
+  // Once unlocked, our own rule makes the page look unlocked: remember it on the root.
+  const locked = root.hasAttribute(SCROLL_UNLOCK)
+    || ([root, document.body].some((element) => ["hidden", "clip"].includes(getComputedStyle(element).overflowY)) && root.scrollHeight > window.innerHeight + 40);
+  if (!overlay || !locked) return null;
+  root.setAttribute(SCROLL_UNLOCK, "");
+  return `html[${SCROLL_UNLOCK}], html[${SCROLL_UNLOCK}] > body { overflow-y: auto !important; }`;
+}
+
 function selectedCss(selectors: string[], declarations = "display: none !important;"): string | null {
   const safe = selectors.filter((selector) => selectorSchema.safeParse(selector).success);
   return safe.length ? `${safe.join(", ")} { ${declarations} }` : null;
@@ -76,7 +102,12 @@ const HIGHLIGHT_CSS = "outline: 3px solid #f59e0b !important; outline-offset: 3p
 const hideElements: Operation<{ selectors: string[] }> = {
   id: "hideElements", label: "Hide selected elements", target: "content-region", protectedElements: PROTECTED_SELECTOR.split(", "),
   paramsSchema: z.object({ selectors: z.array(selectorSchema).max(30) }), validate: () => null,
-  apply(ctx, params) { return css(ctx, "hideElements", selectedCss(params.selectors)); },
+  apply(ctx, params) {
+    const hidden = selectedCss(params.selectors);
+    const unlock = hidden ? scrollUnlockCss(params.selectors) : null;
+    if (!unlock && typeof document !== "undefined") document.documentElement.removeAttribute(SCROLL_UNLOCK);
+    return css(ctx, "hideElements", [hidden, unlock].filter(Boolean).join(" ") || null, () => { if (typeof document !== "undefined") document.documentElement.removeAttribute(SCROLL_UNLOCK); });
+  },
 };
 // P07: element plans dim or highlight blocks by selector; marker selectors in
 // preview, saved selectors after Apply. Same style-layer entry either way.

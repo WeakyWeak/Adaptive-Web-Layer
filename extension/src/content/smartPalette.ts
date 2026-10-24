@@ -129,7 +129,10 @@ export function createSmartPalette(doc: Document, theme: SmartTheme, onChange?: 
 
   run([doc.documentElement, body, ...Array.from(body.querySelectorAll("*"))].slice(0, INITIAL_LIMIT));
 
-  const css = () => Array.from(rules, ([value, entry]) => `[${MARKER}="${value}"] { ${entry.declarations} }`).join("\n");
+  // `:not(#awl-none)` lifts the rule to id-level specificity: sites (and Bootstrap's
+  // `.bg-light`, `.text-white` utilities) mark their own colours !important too,
+  // and a tie goes to the site's later stylesheet, leaving light text on a light band.
+  const css = () => Array.from(rules, ([value, entry]) => `[${MARKER}="${value}"]:not(#awl-none) { ${entry.declarations} }`).join("\n");
   let lastCss = css();
   const roots = new Map<Element, "added" | "restyled">();
   let timer: ReturnType<typeof setTimeout> | null = null;

@@ -167,7 +167,7 @@ export default function AiPanel({ tab, settings }: { tab: ActiveTab | null; sett
         <button onClick={() => void run(FIX_PAGE_REQUEST, "fix")} disabled={!usable || job?.status === "running"} title="The local AI drafts readability fixes, code measures them, and in hybrid mode a cloud model reviews them">
           Fix this page
         </button>
-        <button onClick={() => void run(CLEAN_PAGE_REQUEST, "clean")} disabled={!usable || job?.status === "running"} title="Hide cookie banners, pop-ups, promos and recommendation rails; keep the main content and navigation">
+        <button onClick={() => void run(CLEAN_PAGE_REQUEST, "clean")} disabled={!usable || job?.status === "running"} title="Hide cookie banners, pop-ups, promos, share buttons, author boxes and related posts; keep the main content and navigation">
           Clean this page
         </button>
       </div>

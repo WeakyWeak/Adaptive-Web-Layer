@@ -101,7 +101,7 @@ test("page-builder site: code keeps the article and the title, and leaves a comf
     const tabId = await worker.evaluate(async (url) => (await chrome.tabs.query({ url }))[0]?.id, `${FIXTURES_URL}/${FIXTURE}`) as number;
     await page.bringToFront();
 
-    expect((await send(panel, { type: "AI_RUN", tabId, request: "Clean this page: hide clutter like cookie banners, pop-ups, promos and recommendation rails; keep the main content and navigation", kind: "clean" })).ok).toBe(true);
+    expect((await send(panel, { type: "AI_RUN", tabId, request: "Hide the clutter and make this easier to read", kind: "ask" })).ok).toBe(true);
     await expect.poll(async () => (await job(panel, tabId))?.supervision?.review, { timeout: 20_000 }).toBe("reviewed");
     const result = (await job(panel, tabId))!;
 

@@ -53,6 +53,8 @@ function measure() {
   const changes = preview.changes ?? {};
   const findings: Finding[] = [];
   if (Number(changes.fontSize ?? 14) < 18) findings.push({ id: "small-text-1", type: "small-text", severity: "high", confidence: "high", title: "t", detail: "d", evidence: { px: 14 }, suggestedFix: { changes: { fontSize: 18 }, hide: [], description: "Text 18px" } });
+  // A dark theme that leaves some faint text: the score dips.
+  if (changes.theme === "dark") findings.push({ id: "low-contrast-9", type: "low-contrast", severity: "medium", confidence: "high", title: "t", detail: "d", evidence: { ratio: 3.9 } });
   if (changes.maxContentWidth === 700) findings.push({ id: "horizontal-overflow-1", type: "horizontal-overflow", severity: "high", confidence: "high", title: "t", detail: "d", evidence: { px: 300 } });
   return { type: "MEASURE_RESULT", report: { findings, scanned: 100, capped: false, durationMs: 5 }, mainText: 1000, hiddenText: 0, protectedVisible: 2 };
 }
@@ -140,7 +142,9 @@ describe("supervised fix", () => {
     expect(supervision.review).toBe("reviewed");
     expect(supervision.reviewer).toBe("gemini-3.5-flash");
     expect(supervision.steps.map((step) => step.status)).toEqual(["done", "done", "done", "done"]);
-    expect(supervision.scores).toMatchObject({ before: 90, draft: 100, final: 100 });
+    // A clean run does not change text size, so the draft's fontSize is undone by a code rule.
+    expect(supervision.scores).toMatchObject({ before: 90, draft: 90, final: 90 });
+    expect(supervision.ledger.find((entry) => entry.ref === "fontSize")).toMatchObject({ status: "reverted" });
     expect(job.elements?.map((item) => item.id)).toEqual(["s1", "s3"]);
     expect(supervision.ledger.find((entry) => entry.ref === "s4")).toMatchObject({ status: "dropped", source: "cloud" });
     expect(supervision.ledger.find((entry) => entry.ref === "s3")).toMatchObject({ status: "added", source: "cloud" });
@@ -204,6 +208,33 @@ describe("supervised fix", () => {
     for (const key of ["theme", "letterSpacing"]) {
       expect(job.supervision?.ledger.find((entry) => entry.ref === key)).toMatchObject({ status: "reverted", reason: expect.stringMatching(/no problem measured on this page calls for it/) });
     }
+  });
+
+  it("keeps a setting the reader asked for by name when only the score dips, and says so", async () => {
+    await useSettings((settings) => ({ ...settings, ai: { ...settings.ai, mode: "local" } }));
+    plan = draftPlan({ changes: { theme: "dark", reduceMotion: true }, elements: { hide: [], dim: [], highlight: [] } });
+    await runAiJob(TAB, "It is too light, I need it darker");
+    const job = (await readJob(TAB))!;
+    expect(job.changes).toMatchObject({ theme: "dark" });
+    expect(job.supervision?.ledger.find((entry) => entry.ref === "theme")).toMatchObject({ status: "kept", reason: expect.stringMatching(/Kept because you asked for it, although the readability score fell/) });
+  });
+
+  it("still undoes the same setting when the request did not ask for it", async () => {
+    await useSettings((settings) => ({ ...settings, ai: { ...settings.ai, mode: "local" } }));
+    plan = draftPlan({ changes: { theme: "dark", reduceMotion: true }, elements: { hide: [], dim: [], highlight: [] } });
+    await runAiJob(TAB, "Make the text color red");
+    const job = (await readJob(TAB))!;
+    expect(job.changes).toEqual({ reduceMotion: true });
+    expect(job.supervision?.ledger.find((entry) => entry.ref === "theme")).toMatchObject({ status: "reverted", reason: expect.stringMatching(/score fell/) });
+  });
+
+  it("clean: keeps calmer motion, undoes settings that change how text looks", async () => {
+    await useSettings((settings) => ({ ...settings, ai: { ...settings.ai, mode: "local" } }));
+    plan = draftPlan({ changes: { fontSize: 20, fixContrast: true, dimNonMain: true, reduceMotion: true } });
+    await runAiJob(TAB, CLEAN_PAGE_REQUEST, "clean");
+    const job = (await readJob(TAB))!;
+    expect(job.changes).toEqual({ reduceMotion: true });
+    expect(job.supervision?.ledger.find((entry) => entry.ref === "fixContrast")).toMatchObject({ status: "reverted", reason: expect.stringMatching(/cleaning hides clutter/) });
   });
 
   it("undoes a width change nobody asked for when the lines are already a comfortable length", async () => {

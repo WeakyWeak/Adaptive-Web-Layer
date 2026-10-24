@@ -56,6 +56,25 @@ if (isRestrictedPage()) {
   let hostname = window.location.hostname;
   let observer: MutationObserver | null = null;
   let applyTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /**
+   * Wait until what the extension shows has settled before measuring: no
+   * re-apply pending and our stylesheets unchanged across two checks. Smart
+   * dark repaints in rounds (the page reacts to the new theme, then we
+   * re-apply), so a fixed short wait measured half-painted pages.
+   */
+  async function settledStyles(maxMs = 1200): Promise<void> {
+    const styles = () => Array.from(document.querySelectorAll("style[data-awl]"), (style) => style.textContent ?? "").join("\n");
+    const started = performance.now();
+    let last = styles();
+    let stable = 0;
+    while (stable < 2 && performance.now() - started < maxMs) {
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      const next = styles();
+      stable = next === last && applyTimer === null ? stable + 1 : 0;
+      last = next;
+    }
+  }
   let currentSettings: Settings | null = null;
   let undoSettings: Settings | null = null;
   // AI preview: a temporary overlay on this site's rule, never saved. It goes
@@ -305,7 +324,7 @@ if (isRestrictedPage()) {
         // Measure what the page shows with the latest saved settings (a fix may have just been saved).
         const settings = await loadSettings();
         await applyFromStorage(settings);
-        await new Promise((resolve) => setTimeout(resolve, 60));
+        await settledStyles();
         const effective = previewChanges ? withSitePatch(settings, hostname, previewChanges) : settings;
         const appearance = resolveAppearance(effective, hostname);
         const region = document.querySelector(getContentRegionSelector(settings.global.applyToWholePage)) ?? document.body;
@@ -324,7 +343,7 @@ if (isRestrictedPage()) {
       void (async () => {
         // Measure exactly what the page shows: saved settings plus the current preview.
         const settings = currentSettings ?? await loadSettings();
-        await new Promise((resolve) => setTimeout(resolve, 60));
+        await settledStyles();
         const effective = previewChanges ? withSitePatch(settings, hostname, previewChanges) : settings;
         const appearance = resolveAppearance(effective, hostname);
         const region = document.querySelector(getContentRegionSelector(settings.global.applyToWholePage)) ?? document.body;

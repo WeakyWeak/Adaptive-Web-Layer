@@ -108,7 +108,7 @@ export type PreviewElements = z.infer<typeof PreviewElementsSchema>;
 export const FIX_PAGE_REQUEST = "Fix this page so it is easier for me to read: adjust text size, spacing, width and contrast where the measured problems call for it, and hide distracting clutter like pop-ups and promo bars; keep the main content and navigation";
 
 /** The one-click request behind the side panel's "Clean this page" button. */
-export const CLEAN_PAGE_REQUEST = "Clean this page: hide clutter like cookie banners, pop-ups, promos and recommendation rails; keep the main content and navigation";
+export const CLEAN_PAGE_REQUEST = "Clean this page: hide clutter like cookie banners, pop-ups, promos, share buttons, author boxes and related or recommended posts; keep the main content and navigation";
 
 export const PROTECT_LABEL: Record<ProtectKind, string> = {
   navigation: "navigation",
@@ -241,6 +241,7 @@ const CLUTTER_KINDS: readonly ClutterKind[] = [
   { asked: /promo|sale|\bads?\b|advert|sponsor|banner/i, matches: /promo|sponsor|advert|(^|[\s_-])ads?([\s_-]|$)/i },
   { asked: /recommend|related|suggest|popular|trending|rail/i, matches: /recommend|related|popular|trending/i },
   { asked: /share|social/i, matches: /share|social/i },
+  { asked: /author|bio/i, matches: /author-?(?:box|bio|info|card)|about-?the-?author/i },
   { asked: /paywall/i, matches: /paywall/i },
   { asked: /comment|discussion/i, matches: /comment|discussion|disqus/i, optIn: true },
 ];

@@ -18,6 +18,8 @@ import {
   guardWidth,
   minContentWidth,
   regressions,
+  requestedFields,
+  scoreOnly,
   ReviewReplySchema,
   reviewJsonSchema,
   type Measures,
@@ -143,6 +145,22 @@ describe("regressions", () => {
     // The main region the code measured is unchanged, but the real article went.
     expect(regressions(before, { ...before, pageText: 600 })).toEqual([expect.stringMatching(/80% of the page's text would disappear/)]);
     expect(regressions(before, { ...before, pageText: 2000 })).toEqual([]);
+  });
+});
+
+describe("requestedFields", () => {
+  it("finds the settings a typed request names", () => {
+    expect([...requestedFields("It is too light. I need it darker.")].sort()).toEqual(["brightness", "theme"]);
+    expect(requestedFields("Make the text color red").size).toBe(0);
+    expect(requestedFields("bigger text please")).toEqual(new Set(["fontSize"]));
+  });
+  it("names none for one-click Fix and Clean", () => {
+    expect(requestedFields("Fix this page … contrast … dark", "fix").size).toBe(0);
+  });
+  it("tells a score-only regression from a hard one", () => {
+    expect(scoreOnly(["The readability score fell from 78 to 73."])).toBe(true);
+    expect(scoreOnly(["The readability score fell from 78 to 73.", "Text started overlapping."])).toBe(false);
+    expect(scoreOnly([])).toBe(false);
   });
 });
 

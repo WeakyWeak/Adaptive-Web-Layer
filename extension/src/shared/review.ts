@@ -292,11 +292,43 @@ export const FIX_FIELDS: Readonly<Partial<Record<FindingType, readonly string[]>
   "focus-indicator": ["focusRing"],
 };
 const CALM_FIELDS = ["reduceMotion", "reduceParallax", "pauseAutoplay"];
+/** "Clean this page" hides clutter; the only settings it may change calm the page down, never how text looks. */
+export const CLEAN_FIELDS: ReadonlySet<string> = new Set([...CALM_FIELDS, "staticifyStickyHeaders"]);
 
 /** The settings a fix run may change, given the problem types measured before it. */
 export function fixableFields(problems: readonly string[]): Set<string> {
   return new Set([...CALM_FIELDS, ...problems.flatMap((type) => FIX_FIELDS[type as FindingType] ?? [])]);
 }
+
+// ── Settings the reader asked for by name ────────────────────────────────────
+// A change the reader explicitly asked for ("I need it darker" → dark theme) is
+// not undone just because the readability score dips; it is kept and the dip is
+// reported. Hard regressions (lost text, sideways scrolling, overlap, vanished
+// navigation) still undo it.
+const ASKED_FOR: Readonly<Record<string, RegExp>> = {
+  theme: /\b(dark\w*|night|light mode|light theme|sepia|theme|black background|white background)\b/i,
+  contrast: /\bcontrast\b/i,
+  brightness: /\b(bright\w*|dim\w*|darker|lighter|glare)\b/i,
+  saturation: /\b(saturat\w*|colou?rful|gr[ae]y\w*|muted|vivid)\b/i,
+  fontSize: /\b(bigger|larger|smaller|text size|font size|zoom|tiny|huge)\b/i,
+  fontFamily: /\b(font|typeface|dyslexi\w*)\b/i,
+  lineHeight: /\b(line height|line spacing|between lines)\b/i,
+  letterSpacing: /\b(letter spacing|between letters)\b/i,
+  wordSpacing: /\b(word spacing|between words)\b/i,
+  paragraphSpacing: /\b(paragraph spacing|between paragraphs)\b/i,
+  underlineLinks: /\bunderlin\w*/i,
+  focusRing: /\bfocus\b/i,
+  reduceMotion: /\b(motion|animation\w*|moving)\b/i,
+};
+
+/** The settings a typed request names; one-click Fix and Clean name none. */
+export function requestedFields(request: string, kind?: string): Set<string> {
+  if (kind === "fix" || kind === "clean") return new Set();
+  return new Set(Object.entries(ASKED_FOR).filter(([, words]) => words.test(request)).map(([key]) => key));
+}
+
+/** The only regression is a lower readability score. */
+export const scoreOnly = (reasons: readonly string[]): boolean => reasons.length > 0 && reasons.every((reason) => reason.startsWith("The readability score fell"));
 
 // ── Content width: changed only where it helps ───────────────────────────────
 // Small models narrow the column on almost every page, which squeezes card

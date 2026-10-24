@@ -13,7 +13,7 @@ import type { AI_RUN_KINDS } from "../shared/messages";
 import { BlocksSchema } from "../shared/messages";
 import { detectShortcut, DomSnapshotSchema, formatProviderError, toProviderError, type DomSnapshot, type Plan } from "../shared/plan";
 import { ProviderRouter } from "../shared/providerRouter";
-import { draftIsUnsure, draftLedger, type LedgerSource } from "../shared/review";
+import { draftIsUnsure, draftLedger, requestedFields, type LedgerSource } from "../shared/review";
 import { cloudConsentFor, isSiteEnabled, normalizeHostname, resolveAppearance, resolveFocus, resolveMotion, resolveTypography, SiteRuleSchema } from "../shared/settings";
 import { currentAiValues, exactSiteRule, restoreSiteRule, withSiteElements, withSitePatch, type SiteElements } from "../shared/sitePatch";
 import { loadSettings, saveSettings } from "../shared/storage";
@@ -176,7 +176,7 @@ export async function runAiJob(tabId: number, request: string, kind: AiRunKind =
     });
     const { state: draft, ledger } = guarded;
     const settled: Settled = before
-      ? await settle(tabId, before.measures, draft, ledger)
+      ? await settle(tabId, before.measures, draft, ledger, requestedFields(request, kind))
       : { state: draft, ledger, measured: await measureState(tabId, draft), reverted: [], unresolved: [] };
     if (signal.aborted) {
       await setPreview(tabId, null);

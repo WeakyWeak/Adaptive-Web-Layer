@@ -14,7 +14,7 @@ import { DomSnapshotSchema, effectiveChanges, formatProviderError, ProviderError
 import { ProviderRouter } from "../shared/providerRouter";
 import type { JsonSchema } from "../shared/jsonSchema";
 import type { ImageInput } from "../shared/llmProvider";
-import { applyReview, draftItems, fixableFields, guardWidth, regressions, ReviewReplySchema, reviewJsonSchema, WIDTH_WORDS, type LedgerEntry, type Measures, type ReviewReply } from "../shared/review";
+import { applyReview, CLEAN_FIELDS, draftItems, fixableFields, guardWidth, regressions, requestedFields, scoreOnly, ReviewReplySchema, reviewJsonSchema, WIDTH_WORDS, type LedgerEntry, type Measures, type ReviewReply } from "../shared/review";
 import { cloudConsentFor, normalizeHostname, type Settings } from "../shared/settings";
 import { currentAiValues } from "../shared/sitePatch";
 import { loadSettings, saveSettings } from "../shared/storage";
@@ -98,7 +98,8 @@ const active = (entry: LedgerEntry) => entry.status === "kept" || entry.status =
 /**
  * Code's rules on a state's settings, with the ledger updated (an undone
  * setting shows as undone, with the rule): a fix run keeps only settings a
- * measured problem calls for; a width change must help (guardWidth).
+ * measured problem calls for, a clean run only calms motion and sticky bars,
+ * and a width change must help (guardWidth).
  */
 export function guardSettings(state: DraftState, ledger: readonly LedgerEntry[], input: {
   request: string;
@@ -113,11 +114,12 @@ export function guardSettings(state: DraftState, ledger: readonly LedgerEntry[],
     if (entry) Object.assign(entry, { status: "reverted", reason: `Undone by a code rule: ${reason}`.slice(0, 240) });
   };
   let changes = state.changes;
-  if (input.kind === "fix" && input.before) {
-    const allowed = fixableFields(input.before.problems);
-    for (const key of Object.keys(changes)) if (!allowed.has(key)) undo(key, "no problem measured on this page calls for it.");
+  const limit = (allowed: ReadonlySet<string>, reason: string) => {
+    for (const key of Object.keys(changes)) if (!allowed.has(key)) undo(key, reason);
     changes = Object.fromEntries(Object.entries(changes).filter(([key]) => allowed.has(key)));
-  }
+  };
+  if (input.kind === "fix" && input.before) limit(fixableFields(input.before.problems), "no problem measured on this page calls for it.");
+  if (input.kind === "clean") limit(CLEAN_FIELDS, "cleaning hides clutter; it does not change how the text looks.");
   const fontSize = Number(changes.fontSize ?? input.current.fontSize ?? 16) || 16;
   const asked = input.kind !== "fix" && input.kind !== "clean" && WIDTH_WORDS.test(input.request);
   const guard = guardWidth(changes, { asked, hasMain: input.hasMain, longLines: input.before?.problems.includes("long-lines") ?? false, fontSize });
@@ -153,7 +155,7 @@ export interface Settled { state: DraftState; ledger: LedgerEntry[]; measured: M
  * whose removal fixes the most, within MAX_REVERT_CHECKS re-measurements.
  * Leaves the page previewing the settled state.
  */
-export async function settle(tabId: number, before: Measures, state: DraftState, ledger: readonly LedgerEntry[]): Promise<Settled> {
+export async function settle(tabId: number, before: Measures, state: DraftState, ledger: readonly LedgerEntry[], requested: ReadonlySet<string> = new Set()): Promise<Settled> {
   let current = state;
   let measured = await measureState(tabId, current);
   const entries = ledger.map((entry) => ({ ...entry }));
@@ -163,6 +165,8 @@ export async function settle(tabId: number, before: Measures, state: DraftState,
   let checks = 0;
   for (const group of revertGroups(current, entries)) {
     if (reasons.length === 0 || checks >= MAX_REVERT_CHECKS) break;
+    // What the reader asked for by name stays when only the score dipped (reported below).
+    if (scoreOnly(reasons) && [...group].every((ref) => requested.has(ref))) continue;
     checks++;
     const candidate = without(current, group);
     const trial = await measureState(tabId, candidate);
@@ -184,6 +188,11 @@ export async function settle(tabId: number, before: Measures, state: DraftState,
   }
   // The last trial may have been refused; show the settled state.
   if (checks > 0) await setPreview(tabId, { changes: current.changes, elements: current.items });
+  if (scoreOnly(reasons)) {
+    for (const entry of entries) {
+      if (requested.has(entry.ref) && active(entry)) entry.reason = `Kept because you asked for it, although ${reasons[0].charAt(0).toLowerCase()}${reasons[0].slice(1)}`.slice(0, 240);
+    }
+  }
   return { state: current, ledger: entries, measured, reverted, unresolved: reasons };
 }
 
@@ -324,7 +333,7 @@ export async function reviewJob(tabId: number, jobId: string, signal: AbortSigna
       request: job.request, kind: job.kind, hasMain: snapshot.contentRegion !== "body", before: supervision.before, current,
     });
     const settled = supervision.before
-      ? await settle(tabId, supervision.before, guarded.state, guarded.ledger)
+      ? await settle(tabId, supervision.before, guarded.state, guarded.ledger, requestedFields(job.request, job.kind))
       : { state: guarded.state, ledger: guarded.ledger, measured: await measureState(tabId, guarded.state), reverted: [], unresolved: [] };
     await rememberReviewed(job.hostname);
     await consumeAllowOnce(job.hostname, true);
