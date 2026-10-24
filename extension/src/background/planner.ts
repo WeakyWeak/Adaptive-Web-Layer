@@ -41,7 +41,7 @@ export interface PlannerResult {
 
 // Small models like to restyle colours on vague requests ("set up for studying").
 // Colour changes are kept only when the request is about colour or light.
-const COLOUR_FIELDS = ["theme", "contrast", "brightness", "saturation"] as const;
+const COLOUR_FIELDS = ["theme", "contrast", "brightness", "saturation", "textColor"] as const;
 const COLOUR_WORDS = /colou?r|dark|night|light|bright|dim|sepia|warm|theme|contrast|gr[ae]y|saturat|eye|glare|white|black|faint|strain|mode/i;
 
 export function dropUnrequestedColour(request: string, changes: PlanChanges): { changes: PlanChanges; dropped: string[] } {

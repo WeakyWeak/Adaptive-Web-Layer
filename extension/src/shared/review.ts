@@ -133,7 +133,7 @@ export function draftLedger(changes: PlanChanges, items: readonly ElementItem[],
 }
 
 // Same rule as the planner: colours change only when the request is about colour.
-const COLOUR_FIELDS = new Set(["theme", "contrast", "brightness", "saturation"]);
+const COLOUR_FIELDS = new Set(["theme", "contrast", "brightness", "saturation", "textColor"]);
 const COLOUR_WORDS = /colou?r|dark|night|light|bright|dim|sepia|warm|theme|contrast|gr[ae]y|saturat|eye|glare|white|black|faint|strain|mode/i;
 
 /** A reviewer's setting, normalised like a plan's and checked against its field's bounds. */
@@ -319,6 +319,7 @@ const ASKED_FOR: Readonly<Record<string, RegExp>> = {
   underlineLinks: /\bunderlin\w*/i,
   focusRing: /\bfocus\b/i,
   reduceMotion: /\b(motion|animation\w*|moving)\b/i,
+  textColor: /\b(text|font|letters?|words?) colou?rs?\b|\bcolou?r (of|for) the (text|font|letters|words)\b/i,
 };
 
 /** The settings a typed request names; one-click Fix and Clean name none. */

@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import type { TypographyPrefs } from "../shared/settings";
 import { TypographyPrefsSchema, defaultSettings } from "../shared/settings";
-import { AppearancePrefsSchema, type AppearancePrefs } from "../shared/settings";
+import { AppearancePrefsSchema, TEXT_COLOR_OPTIONS, type AppearancePrefs } from "../shared/settings";
 import { loadSettings, saveSettings } from "../shared/storage";
 import { FONT_OPTIONS } from "../content/typographyOps";
 
@@ -249,6 +249,7 @@ function GlobalAppearanceControls(): React.ReactElement {
       <h3 className="opt-section-title">Appearance</h3>
       <p className="opt-section-note">Global appearance applies unless a profile or site rule overrides it.</p>
       <label className="opt-row">Theme<select className="opt-select" value={appearance.theme} onChange={(event) => updateAppearance({ theme: event.target.value as AppearancePrefs["theme"] })}><option value="light">Light</option><option value="dark">Dark</option><option value="sepia">Sepia / warm</option></select></label>
+      <label className="opt-row">Text colour<select className="opt-select" value={appearance.textColor} onChange={(event) => updateAppearance({ textColor: event.target.value as AppearancePrefs["textColor"] })}>{TEXT_COLOR_OPTIONS.map((name) => <option key={name} value={name}>{name ? `${name[0].toUpperCase()}${name.slice(1)} (readable shade)` : "Site colours"}</option>)}</select></label>
       <label className="opt-row">Appearance engine<select className="opt-select" value={appearance.engine} onChange={(event) => updateAppearance({ engine: event.target.value as AppearancePrefs["engine"] })}><option value="fast">Fast</option><option value="smart">Smart</option></select></label>
       <AppearanceRange label="Contrast" value={appearance.contrast} min={0.5} max={2} onChange={(value) => updateAppearance({ contrast: value })} />
       <AppearanceRange label="Brightness" value={appearance.brightness} min={0.5} max={1.5} onChange={(value) => updateAppearance({ brightness: value })} />

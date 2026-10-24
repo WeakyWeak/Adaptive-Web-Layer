@@ -5,6 +5,7 @@
 import { z } from "zod";
 import { aiField, type PlanChanges } from "./aiFields";
 import { suggestElements } from "./elementPlan";
+import { TEXT_COLOR_OPTIONS } from "./settings";
 import { numberBounds } from "./jsonSchema";
 import type { DomSnapshot, Plan } from "./plan";
 
@@ -13,12 +14,15 @@ type Current = Record<string, string | number | boolean>;
 interface IntentRule {
   pattern: RegExp;
   label: string;
-  changes: (current: Current) => PlanChanges;
+  changes: (current: Current, request: string) => PlanChanges;
 }
 
 const num = (current: Current, key: string): number => Number(current[key]);
 
 const DIM_DISTRACTIONS = "dim distractions";
+const COLOUR_NAMES = "red|orange|brown|green|teal|blue|purple|pink|gr[ae]y|black";
+/** "make the text red", "red text", "text colour blue". */
+const TEXT_COLOR_REQUEST = new RegExp(`\\b(text|font|letters?|words?)\\b.*\\b(${COLOUR_NAMES})\\b|\\b(${COLOUR_NAMES}) (text|font|letters|words)\\b`);
 
 const RULES: readonly IntentRule[] = [
   { pattern: /\b(dyslexi\w*)\b/, label: "dyslexia-friendly text", changes: (c) => ({ fontFamily: "Lexend", letterSpacing: 1, wordSpacing: 2, lineHeight: Math.max(num(c, "lineHeight"), 1.8) }) },
@@ -35,6 +39,7 @@ const RULES: readonly IntentRule[] = [
   { pattern: /\b(autoplay|auto-play|videos?)\b/, label: "pause autoplay", changes: () => ({ pauseAutoplay: true }) },
   { pattern: /\b(distract\w*|clutter\w*|focus)\b/, label: DIM_DISTRACTIONS, changes: () => ({ dimNonMain: true }) },
   { pattern: /\bsticky\b/, label: "unstick headers", changes: () => ({ staticifyStickyHeaders: true }) },
+  { pattern: TEXT_COLOR_REQUEST, label: "text colour", changes: (_c, request) => ({ textColor: TEXT_COLOR_OPTIONS.find((name) => name && new RegExp(`\\b${name === "grey" ? "gr[ae]y" : name}\\b`).test(request)) ?? "" }) },
   { pattern: /\b(gr[ae]yscale|no colou?rs?|black and white)\b/, label: "greyscale", changes: () => ({ saturation: 0 }) },
   { pattern: /\b(more|higher|increase)\b.*\bcontrast\b/, label: "more contrast", changes: (c) => ({ contrast: num(c, "contrast") + 0.3 }) },
   { pattern: /\b(too bright|dimmer|less bright)\b/, label: "dimmer", changes: (c) => ({ brightness: num(c, "brightness") - 0.15 }) },
@@ -58,7 +63,7 @@ export function matchIntents(request: string, current: Current, skip: readonly s
   if (matched.length === 0) return null;
   const changes: PlanChanges = {};
   for (const rule of matched) {
-    for (const [key, value] of Object.entries(rule.changes(current))) {
+    for (const [key, value] of Object.entries(rule.changes(current, text))) {
       if (value === undefined) continue;
       const safe = clamp(key, value);
       if (safe !== undefined) changes[key] = safe;

@@ -25,6 +25,9 @@ export const TypographyPrefsSchema = z.object({
 });
 export type TypographyPrefs = z.infer<typeof TypographyPrefsSchema>;
 
+/** Named text colours a reader (or the AI) can pick; "" keeps the site's colours. Code picks a readable shade. */
+export const TEXT_COLOR_OPTIONS = ["", "red", "orange", "brown", "green", "teal", "blue", "purple", "pink", "grey", "black"] as const;
+
 export const AppearancePrefsSchema = z.object({
   theme: z.enum(["light", "dark", "sepia"]).default("light"),
   engine: z.enum(["fast", "smart"]).default("fast"),
@@ -36,6 +39,7 @@ export const AppearancePrefsSchema = z.object({
   underlineLinks: z.boolean().default(false),
   focusRing: z.boolean().default(false),
   fixContrast: z.boolean().default(false),
+  textColor: z.enum(TEXT_COLOR_OPTIONS).default(""),
 });
 export type AppearancePrefs = z.infer<typeof AppearancePrefsSchema>;
 

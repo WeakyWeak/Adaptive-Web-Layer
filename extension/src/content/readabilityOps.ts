@@ -1,15 +1,17 @@
-// ─── Readability fixes (P09) ─────────────────────────────────────────────────
+// ─── Readability fixes (P09) and text colour ─────────────────────────────────
 // Three operations the inspector suggests as fixes: underline links in text,
 // a visible keyboard-focus outline, and darker (or lighter) colours for text
-// that fails WCAG contrast. Settings fields like any other, so they preview,
-// apply, save and undo through the normal settings path.
+// that fails WCAG contrast; plus a named text colour the reader (or the AI)
+// can pick, in a shade code checks against what is behind each element.
+// Settings fields like any other, so they preview, apply, save and undo
+// through the normal settings path.
 
 import { z } from "zod";
 import { contrastRatio, parseCssColor, type Color } from "../lib/color";
 import type { Operation } from "../shared/registry";
-import type { AppearancePrefs } from "../shared/settings";
+import { TEXT_COLOR_OPTIONS, type AppearancePrefs } from "../shared/settings";
 import { createBackdropResolver, requiredContrast } from "./contrast";
-import { PROTECTED_SELECTOR } from "./domUtils";
+import { buildProseSelector, getContentRegionSelector, PROTECTED_SELECTOR } from "./domUtils";
 import { setStyleEntry } from "./styleEntry";
 
 const enabledSchema = z.object({ enabled: z.boolean() });
@@ -81,34 +83,112 @@ const fixContrast: Operation<z.infer<typeof FixContrastSchema>> = {
     const win = window;
     const token = globalThis.crypto?.randomUUID?.().slice(0, 8) ?? Math.random().toString(36).slice(2, 10);
     markLowContrast(win, Array.from(document.body.querySelectorAll("*")).slice(0, INITIAL_LIMIT), token);
-    // Content added later (infinite scroll, SPA renders) is checked in small batches.
-    const added = new Set<Element>();
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const observer = new MutationObserver((records) => {
-      for (const record of records) record.addedNodes.forEach((node) => { if (node instanceof Element && !node.matches(SKIP)) added.add(node); });
-      if (added.size && !timer) timer = setTimeout(() => {
-        timer = null;
-        const batch = [...added].flatMap((root) => [root, ...Array.from(root.querySelectorAll("*"))]).slice(0, BATCH_LIMIT);
-        added.clear();
-        markLowContrast(win, batch, token);
-      }, 200);
-    });
-    observer.observe(document.body, { childList: true, subtree: true });
+    const stop = watchAdded((batch) => markLowContrast(win, batch, token));
     const css = (Object.keys(COLOURS) as ColourKey[]).map((key) => `[${MARKER}="${token}-${key}"] { color: ${COLOURS[key]} !important; }`).join("\n");
     return setStyleEntry(ctx, "fixContrast", css, () => {
-      observer.disconnect();
-      if (timer) clearTimeout(timer);
+      stop();
       document.querySelectorAll(`[${MARKER}^="${token}-"]`).forEach((element) => element.removeAttribute(MARKER));
     });
   },
 };
 
-export const readabilityOperations: Operation<unknown>[] = [underlineLinks, focusRing, fixContrast] as Operation<unknown>[];
+// ─── Text colour ─────────────────────────────────────────────────────────────
+type TextColor = Exclude<typeof TEXT_COLOR_OPTIONS[number], "">;
+/**
+ * Each named colour in two shades: for light backgrounds (≥ 4.5:1 on white)
+ * and for dark ones (≥ 4.5:1 on #121212). Pure red on white is only 4:1, so
+ * "red" is a deeper red there.
+ */
+export const TEXT_SHADES: Record<TextColor, { onLight: string; onDark: string }> = {
+  red: { onLight: "#b3261e", onDark: "#ff8a80" },
+  orange: { onLight: "#a33d00", onDark: "#ffb74d" },
+  brown: { onLight: "#6d4c41", onDark: "#d7b29d" },
+  green: { onLight: "#1b6e2a", onDark: "#81c995" },
+  teal: { onLight: "#00695c", onDark: "#80cbc4" },
+  blue: { onLight: "#0b57d0", onDark: "#a8c7fa" },
+  purple: { onLight: "#6a1b9a", onDark: "#ce93d8" },
+  pink: { onLight: "#ad1457", onDark: "#f48fb1" },
+  grey: { onLight: "#4a4a4a", onDark: "#c4c4c4" },
+  black: { onLight: "#111111", onDark: "#f8f8f8" },
+};
+const TEXT_MARKER = "data-awl-text-color";
+
+/** The shade of `name` that reads on `background`, or null when neither does (a mid-tone band). */
+export function textShadeFor(name: TextColor, background: Color, required = 4.5): "onLight" | "onDark" | null {
+  const shades = TEXT_SHADES[name];
+  const ratio = (shade: "onLight" | "onDark") => contrastRatio(parseCssColor(shades[shade])!, background);
+  const best = ratio("onLight") >= ratio("onDark") ? "onLight" : "onDark";
+  return ratio(best) >= required ? best : null;
+}
+
+/** Mark the prose elements in `elements` with the shade that reads on what is behind them. */
+function markTextColor(win: Window, elements: readonly Element[], name: TextColor, token: string): void {
+  const backdropOf = createBackdropResolver(win);
+  const marks: Array<{ element: Element; shade: string }> = [];
+  for (const element of elements) {
+    if (!element.isConnected || element.closest(SKIP) || !hasOwnText(element)) continue;
+    const backdrop = backdropOf(element);
+    // Over an image or gradient the colour behind the text is unknown: keep the site's.
+    if (backdrop === "image") continue;
+    let style: CSSStyleDeclaration;
+    try { style = win.getComputedStyle(element); } catch { continue; }
+    const shade = textShadeFor(name, backdrop, requiredContrast(style));
+    if (shade) marks.push({ element, shade });
+  }
+  for (const { element, shade } of marks) element.setAttribute(TEXT_MARKER, `${token}-${shade}`);
+}
+
+const TextColorSchema = z.object({ value: z.enum(TEXT_COLOR_OPTIONS), bodyReady: z.boolean() });
+
+const textColor: Operation<z.infer<typeof TextColorSchema>> = {
+  id: "textColor", label: "Text colour", target: "prose", protectedElements: PROTECTED_SELECTOR.split(", "), paramsSchema: TextColorSchema, validate: () => null,
+  apply(ctx, params) {
+    if (!params.value || typeof document === "undefined" || !document.body) return setStyleEntry(ctx, "textColor", null);
+    const name = params.value;
+    const win = window;
+    const token = globalThis.crypto?.randomUUID?.().slice(0, 8) ?? Math.random().toString(36).slice(2, 10);
+    // The text the typography settings reach (the article, or the whole page); links keep their own colour.
+    const prose = `${buildProseSelector(getContentRegionSelector(ctx.applyToWholePage))}:not(a)`;
+    const inProse = (elements: Element[]) => elements.filter((element) => { try { return element.matches(prose); } catch { return false; } });
+    markTextColor(win, inProse(Array.from(document.body.querySelectorAll("*")).slice(0, INITIAL_LIMIT)), name, token);
+    const stop = watchAdded((batch) => markTextColor(win, inProse(batch), name, token));
+    // Two :not(#…) lift the rule above Smart dark's colours (one) and the site's !important ones.
+    const css = (["onLight", "onDark"] as const).map((shade) => `[${TEXT_MARKER}="${token}-${shade}"]:not(#awl-none):not(#awl-none) { color: ${TEXT_SHADES[name][shade]} !important; }`).join("\n");
+    return setStyleEntry(ctx, "textColor", css, () => {
+      stop();
+      document.querySelectorAll(`[${TEXT_MARKER}^="${token}-"]`).forEach((element) => element.removeAttribute(TEXT_MARKER));
+    });
+  },
+};
+
+/** Content added later (infinite scroll, SPA renders), handed over in small batches; returns stop(). */
+function watchAdded(onBatch: (batch: Element[]) => void): () => void {
+  const added = new Set<Element>();
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const observer = new MutationObserver((records) => {
+    for (const record of records) record.addedNodes.forEach((node) => { if (node instanceof Element && !node.matches(SKIP)) added.add(node); });
+    if (added.size && !timer) timer = setTimeout(() => {
+      timer = null;
+      const batch = [...added].flatMap((root) => [root, ...Array.from(root.querySelectorAll("*"))]).slice(0, BATCH_LIMIT);
+      added.clear();
+      onBatch(batch);
+    }, 200);
+  });
+  observer.observe(document.body, { childList: true, subtree: true });
+  return () => {
+    observer.disconnect();
+    if (timer) clearTimeout(timer);
+  };
+}
+
+export const readabilityOperations: Operation<unknown>[] = [underlineLinks, focusRing, fixContrast, textColor] as Operation<unknown>[];
 
 export function readabilityPlanSteps(prefs: AppearancePrefs, theme: AppearancePrefs["theme"], bodyReady: boolean) {
   return [
     { opId: "underlineLinks", params: { enabled: prefs.underlineLinks } },
     { opId: "focusRing", params: { enabled: prefs.focusRing } },
     { opId: "fixContrast", params: { enabled: prefs.fixContrast, theme, engine: prefs.engine, bodyReady } },
+    // After the theme and the contrast fix, so it reads the colours they leave behind.
+    { opId: "textColor", params: { value: prefs.textColor, bodyReady } },
   ];
 }

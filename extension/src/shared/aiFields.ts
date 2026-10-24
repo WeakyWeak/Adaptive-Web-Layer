@@ -52,6 +52,7 @@ export const AI_FIELDS: readonly AiField[] = [
   { key: "underlineLinks", group: "appearance", label: "Underline links", unit: "", hint: "underline links inside text so they stand out without colour", schema: bare(a.underlineLinks) },
   { key: "focusRing", group: "appearance", label: "Visible focus outline", unit: "", hint: "a clear outline around the link or button that has keyboard focus", schema: bare(a.focusRing) },
   { key: "fixContrast", group: "appearance", label: "Fix low-contrast text", unit: "", hint: "make faint text that is hard to read darker (or lighter on dark backgrounds)", schema: bare(a.fixContrast) },
+  { key: "textColor", group: "appearance", label: "Text colour", unit: "", hint: "colour of the page's text when the reader asks for one; \"\" keeps the site's colours; code picks a shade that stays readable", schema: bare(a.textColor) },
   { key: "dimNonMain", group: "focus", label: "Dim distractions", unit: "", hint: "fade content outside the main reading area", schema: bare(f.dimNonMain) },
   { key: "staticifyStickyHeaders", group: "focus", label: "Unstick headers", unit: "", hint: "stop headers from following the scroll", schema: bare(f.staticifyStickyHeaders) },
   { key: "reduceMotion", group: "motion", label: "Reduce motion", unit: "", hint: "calm animations and transitions", schema: bare(m.reduceMotion) },

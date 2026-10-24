@@ -151,7 +151,8 @@ describe("regressions", () => {
 describe("requestedFields", () => {
   it("finds the settings a typed request names", () => {
     expect([...requestedFields("It is too light. I need it darker.")].sort()).toEqual(["brightness", "theme"]);
-    expect(requestedFields("Make the text color red").size).toBe(0);
+    expect(requestedFields("Make the text color red")).toEqual(new Set(["textColor"]));
+    expect(requestedFields("make it red").size).toBe(0);
     expect(requestedFields("bigger text please")).toEqual(new Set(["fontSize"]));
   });
   it("names none for one-click Fix and Clean", () => {

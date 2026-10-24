@@ -178,6 +178,9 @@ describe("formatProviderError", () => {
 describe("dropUnrequestedColour", () => {
   it("drops colour changes the request did not ask for", () => {
     expect(dropUnrequestedColour("set this up for studying", { fontSize: 18, theme: "dark", saturation: 0.8 })).toEqual({ changes: { fontSize: 18 }, dropped: ["theme", "saturation"] });
+    // Text colour follows the same rule: only when the request is about colour.
+    expect(dropUnrequestedColour("bigger text", { fontSize: 20, textColor: "red" })).toEqual({ changes: { fontSize: 20 }, dropped: ["textColor"] });
+    expect(dropUnrequestedColour("make the text colour red", { textColor: "red" }).changes).toEqual({ textColor: "red" });
   });
 
   it("keeps colour changes when the request is about colour or light", () => {
