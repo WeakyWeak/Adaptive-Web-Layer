@@ -2,7 +2,7 @@ import { z } from "zod";
 import { FONT_FAMILY_OPTIONS } from "./settings";
 import { DomSnapshotSchema } from "./plan";
 import { PreviewElementsSchema, SnapshotBlockSchema } from "./elementPlan";
-import { GlossaryTermSchema, MAX_SELECTION_CHARS, PAGE_KINDS, SELECTION_KINDS, SelectionResultSchema, SummaryResultSchema } from "./comprehension";
+import { GlossaryTermSchema, MAX_SELECTION_CHARS, PAGE_KINDS, ReadingViewResultSchema, SELECTION_KINDS, SelectionResultSchema, SummaryResultSchema } from "./comprehension";
 import { TARGET_CODES } from "./languages";
 import { InspectReportSchema } from "./inspector";
 
@@ -57,6 +57,9 @@ export const TypographyPrefsPayloadSchema = z.object({
   wordSpacing: z.number(),
   paragraphSpacing: z.number(),
   maxContentWidth: z.number(),
+  noItalics: z.boolean().default(false),
+  unjustify: z.boolean().default(false),
+  noAllCaps: z.boolean().default(false),
 });
 
 export const ApplyTypographySchema = z.object({
@@ -95,14 +98,15 @@ export const DomSnapshotResponseSchema = z.object({
 // to chrome.storage.session and the side panel renders whatever is stored.
 const TabIdSchema = z.number().int().nonnegative();
 /** ask: a typed request · clean: "Clean this page" · fix: "Fix this page" (P10: also sees the measured problems). */
-export const AI_RUN_KINDS = ["ask", "clean", "fix"] as const;
+export const AI_RUN_KINDS = ["ask", "clean", "fix", "describeMe"] as const;
 export const AiRunSchema = z.object({ type: z.literal("AI_RUN"), tabId: TabIdSchema, request: z.string().trim().min(1).max(1000), kind: z.enum(AI_RUN_KINDS).default("ask") });
 export const AiJobActionSchema = z.object({
   /** AI_REVIEW (P10): ask the cloud to review the current preview (after consent, or after a failed review). */
   type: z.enum(["AI_CANCEL", "AI_APPLY", "AI_DISCARD", "AI_UNDO", "AI_USE_FALLBACK", "AI_REVIEW"]),
   tabId: TabIdSchema,
 });
-export const AiSaveProfileSchema = z.object({ type: z.literal("AI_SAVE_PROFILE"), tabId: TabIdSchema, name: z.string().trim().min(1).max(64) });
+/** activate (P11): also make the new profile the active one (a described profile, saved for every site). */
+export const AiSaveProfileSchema = z.object({ type: z.literal("AI_SAVE_PROFILE"), tabId: TabIdSchema, name: z.string().trim().min(1).max(64), activate: z.boolean().optional() });
 /** P07: per-item toggle in a preview; enabling a protected hide is the user's confirmation. */
 export const AiSetElementSchema = z.object({ type: z.literal("AI_SET_ELEMENT"), tabId: TabIdSchema, id: z.string().min(1).max(32), enabled: z.boolean() });
 
@@ -158,7 +162,7 @@ export const SetCloudConsentSchema = z.object({
 // ── P08: comprehension ─────────────────────────────────────────────────────────
 // Side panel → background
 export const UnderstandRunSchema = z.object({ type: z.literal("UNDERSTAND_RUN"), tabId: z.number().int().nonnegative(), kind: z.enum(PAGE_KINDS), refresh: z.boolean().optional() });
-export const UnderstandHideSchema = z.object({ type: z.literal("UNDERSTAND_HIDE"), tabId: z.number().int().nonnegative(), what: z.enum(["summary", "glossary"]) });
+export const UnderstandHideSchema = z.object({ type: z.literal("UNDERSTAND_HIDE"), tabId: z.number().int().nonnegative(), what: z.enum(["summary", "glossary", "readingView"]) });
 export const UnderstandRetrySchema = z.object({ type: z.literal("UNDERSTAND_RETRY"), tabId: z.number().int().nonnegative(), local: z.boolean().optional() });
 export const UnderstandCancelSchema = z.object({ type: z.literal("UNDERSTAND_CANCEL"), tabId: z.number().int().nonnegative() });
 // Content (selection popover) → background; the tab comes from the sender.
@@ -176,6 +180,8 @@ export const UnderstandSelectionSchema = z.object({
 export const GetPageTextSchema = z.object({ type: z.literal("GET_PAGE_TEXT") });
 export const PageTextSchema = z.object({ type: z.literal("PAGE_TEXT"), url: z.string(), title: z.string(), text: z.string().max(400_000), skippedCode: z.number() });
 export const ShowSummarySchema = z.object({ type: z.literal("SHOW_SUMMARY"), summary: SummaryResultSchema.nullable() });
+/** P11: show (or, with null, close) the dyslexia reading view over the page; the page itself is never changed. */
+export const ShowReadingViewSchema = z.object({ type: z.literal("SHOW_READING_VIEW"), view: ReadingViewResultSchema.nullable() });
 export const ShowGlossarySchema = z.object({ type: z.literal("SHOW_GLOSSARY"), terms: z.array(GlossaryTermSchema).nullable() });
 export const GlossaryShownSchema = z.object({ type: z.literal("GLOSSARY_SHOWN"), counts: z.record(z.number().int().min(0)) });
 // Side panel → content: scroll to a term and show its definition.
@@ -273,6 +279,7 @@ export const AnyMessageSchema = z.discriminatedUnion("type", [
   GetPageTextSchema,
   PageTextSchema,
   ShowSummarySchema,
+  ShowReadingViewSchema,
   ShowGlossarySchema,
   GlossaryShownSchema,
   GlossaryRevealSchema,

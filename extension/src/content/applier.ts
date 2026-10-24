@@ -6,6 +6,7 @@
 import type { AppearancePrefs, FocusPrefs, MotionPrefs, TypographyPrefs } from "../shared/settings";
 import { applyPlan, type ApplyContext, type PlanStep, type Revert } from "../shared/registry";
 import { appearancePlanSteps } from "./appearanceOps";
+import { textShapePlanSteps } from "./dyslexiaOps";
 import { focusPlanSteps } from "./focusOps";
 
 // Keep track of the current revert handle so re-applying always does a clean replace
@@ -15,7 +16,22 @@ let _appearanceReset: Revert | null = null;
 let _focusRevert: Revert | null = null;
 let _focusSignature = "";
 let _currentPrefs: TypographyPrefs | null = null;
+let _typographySignature = "";
 const _undo: TypographyPrefs[] = [];
+
+/** The registry steps for typography prefs (P11: plus the text-shape operations). */
+export function typographyPlanSteps(prefs: TypographyPrefs): PlanStep[] {
+  return [
+    { opId: "fontFamily", params: { value: prefs.fontFamily } },
+    { opId: "fontSize", params: { value: prefs.fontSize } },
+    { opId: "lineHeight", params: { value: prefs.lineHeight } },
+    { opId: "letterSpacing", params: { value: prefs.letterSpacing } },
+    { opId: "wordSpacing", params: { value: prefs.wordSpacing } },
+    { opId: "paragraphSpacing", params: { value: prefs.paragraphSpacing } },
+    { opId: "maxContentWidth", params: { value: prefs.maxContentWidth } },
+    ...textShapePlanSteps(prefs),
+  ];
+}
 
 /**
  * Apply a TypographyPrefs object to the page via the registry.
@@ -26,7 +42,9 @@ export function applyTypography(ctx: ApplyContext, prefs: TypographyPrefs): Reve
   // Content mutations can fire while a sticky header or ad slot changes class.
   // Rewriting the shared stylesheet for identical typography also rewrites the
   // Smart palette, which causes visible flicker on dynamic sites.
-  if (_currentRevert && _currentPrefs && JSON.stringify(_currentPrefs) === JSON.stringify(prefs)) {
+  const steps = typographyPlanSteps(prefs);
+  const signature = JSON.stringify(steps);
+  if (_currentRevert && _currentPrefs && signature === _typographySignature) {
     return _currentRevert;
   }
 
@@ -38,16 +56,6 @@ export function applyTypography(ctx: ApplyContext, prefs: TypographyPrefs): Reve
     _currentRevert = null;
   }
 
-  const steps: PlanStep[] = [
-    { opId: "fontFamily", params: { value: prefs.fontFamily } },
-    { opId: "fontSize", params: { value: prefs.fontSize } },
-    { opId: "lineHeight", params: { value: prefs.lineHeight } },
-    { opId: "letterSpacing", params: { value: prefs.letterSpacing } },
-    { opId: "wordSpacing", params: { value: prefs.wordSpacing } },
-    { opId: "paragraphSpacing", params: { value: prefs.paragraphSpacing } },
-    { opId: "maxContentWidth", params: { value: prefs.maxContentWidth } },
-  ];
-
   const result = applyPlan(ctx, steps);
   if (result.errors.length > 0) {
     console.warn("[AWL applier] plan had errors:", result.errors);
@@ -55,6 +63,7 @@ export function applyTypography(ctx: ApplyContext, prefs: TypographyPrefs): Reve
 
   _currentRevert = result.revert;
   _currentPrefs = { ...prefs };
+  _typographySignature = signature;
   return result.revert;
 }
 
@@ -68,6 +77,7 @@ export function revertTypography(): void {
     _currentRevert = null;
   }
   _currentPrefs = null;
+  _typographySignature = "";
   _undo.length = 0;
 }
 

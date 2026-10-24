@@ -30,11 +30,7 @@ export type PlanParseResult =
 export function parsePlan(raw: unknown): PlanParseResult {
   if (!raw || typeof raw !== "object") return { ok: false, errors: ["Reply is not a JSON object."] };
   const candidate = { ...(raw as Record<string, unknown>) };
-  if (candidate.changes && typeof candidate.changes === "object") {
-    candidate.changes = Object.fromEntries(Object.entries(candidate.changes as Record<string, unknown>)
-      .filter(([, value]) => value !== null && value !== undefined)
-      .map(([key, value]) => [key, normaliseValue(value)]));
-  }
+  candidate.changes = normaliseChanges(candidate.changes);
   if (!Array.isArray(candidate.expand)) delete candidate.expand;
   else candidate.expand = (candidate.expand as unknown[]).filter((id) => typeof id === "string").slice(0, 3);
   if (candidate.elements === null || typeof candidate.elements !== "object") delete candidate.elements;
@@ -44,6 +40,14 @@ export function parsePlan(raw: unknown): PlanParseResult {
   const parsed = PlanSchema.safeParse(candidate);
   if (parsed.success) return { ok: true, plan: parsed.data };
   return { ok: false, errors: parsed.error.issues.map((issue) => `${issue.path.join(".") || "plan"}: ${issue.message}`) };
+}
+
+/** A model's changes object with nulls dropped, "default" → "" and numbers or booleans typed as strings fixed. */
+export function normaliseChanges(changes: unknown): unknown {
+  if (!changes || typeof changes !== "object" || Array.isArray(changes)) return changes;
+  return Object.fromEntries(Object.entries(changes as Record<string, unknown>)
+    .filter(([, value]) => value !== null && value !== undefined)
+    .map(([key, value]) => [key, normaliseValue(value)]));
 }
 
 function normaliseValue(value: unknown): unknown {

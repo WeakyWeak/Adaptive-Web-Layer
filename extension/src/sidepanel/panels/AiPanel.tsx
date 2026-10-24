@@ -139,12 +139,14 @@ function JobResult({ job, settings, onRerun, onError }: {
 }
 
 export default function AiPanel({ tab, settings }: { tab: ActiveTab | null; settings: Settings }): React.ReactElement {
-  const job = useAiJob(tab?.id ?? null);
+  const tabJob = useAiJob(tab?.id ?? null);
+  // A described profile (P11) is shown in "Reading support", next to where it was asked for.
+  const job = tabJob?.kind === "describeMe" ? null : tabJob;
   const [input, setInput] = useState("");
   const [error, setError] = useState<string | null>(null);
   useEffect(() => setError(null), [tab?.id]);
 
-  const run = async (request: string, kind: "ask" | "clean" | "fix" = "ask") => {
+  const run = async (request: string, kind: NonNullable<AiJob["kind"]> = "ask") => {
     if (!tab || !request.trim()) return;
     setError(await command({ type: "AI_RUN", tabId: tab.id, request: request.trim(), kind }));
   };
@@ -158,7 +160,7 @@ export default function AiPanel({ tab, settings }: { tab: ActiveTab | null; sett
           placeholder='e.g. "Make the text larger, keep code colours"'
           value={input}
           maxLength={1000}
-          disabled={!usable || job?.status === "running"}
+          disabled={!usable || tabJob?.status === "running"}
           onChange={(event) => setInput(event.target.value)}
         />
         <button className="primary" type="submit" disabled={!usable || !input.trim() || job?.status === "running"}>Go</button>

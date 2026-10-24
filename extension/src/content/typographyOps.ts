@@ -7,6 +7,7 @@ import { z } from "zod";
 import { registerOperation, type Operation, type ApplyContext, type Revert, type ApplyResult } from "../shared/registry";
 import { FONT_FAMILY_OPTIONS } from "../shared/settings";
 import { buildProseSelector, buildRegionSelector, getContentRegionSelector, PROTECTED_ELEMENTS } from "../content/domUtils";
+import { textShapeOperations } from "./dyslexiaOps";
 
 // ─── Available fonts ──────────────────────────────────────────────────────────
 // OFL-licensed fonts bundled with the extension; names come from the shared allowlist.
@@ -14,8 +15,11 @@ const FONT_LABELS: Record<(typeof FONT_FAMILY_OPTIONS)[number], string> = {
   "": "Site default",
   Lexend: "Lexend (may help some readers)",
   "Atkinson Hyperlegible": "Atkinson Hyperlegible (may help some readers)",
+  // No reliable evidence that it helps; offered because the fit test may find it does for you.
+  OpenDyslexic: "OpenDyslexic (try it in the reading-fit test)",
   Georgia: "Georgia (serif)",
   Verdana: "Verdana (sans-serif)",
+  Arial: "Arial (sans-serif)",
   "system-ui": "System UI (sans-serif)",
 };
 export const FONT_OPTIONS = FONT_FAMILY_OPTIONS.map((value) => ({ value, label: FONT_LABELS[value] }));
@@ -130,49 +134,49 @@ const lineHeightOp = makeCssOp<LineHeightParams>({
 
 // ─── letterSpacing ────────────────────────────────────────────────────────────
 const LetterSpacingParamsSchema = z.object({
-  value: z.number().min(-2).max(10),
+  value: z.number().min(-0.05).max(0.5),
 });
 type LetterSpacingParams = z.infer<typeof LetterSpacingParamsSchema>;
 
 const letterSpacingOp = makeCssOp<LetterSpacingParams>({
   id: "letterSpacing",
-  label: "Letter spacing (px)",
+  label: "Letter spacing (em)",
   target: "prose",
   protectedElements: PROTECTED_ELEMENTS,
   paramsSchema: LetterSpacingParamsSchema,
   validate(params) {
-    if (params.value < -2 || params.value > 10) return "letterSpacing must be -2–10";
+    if (params.value < -0.05 || params.value > 0.5) return "letterSpacing must be -0.05–0.5em";
     return null;
   },
   buildCss(ctx, params) {
     if (params.value === 0) return null;
     const region = getContentRegionSelector(ctx.applyToWholePage);
     const selector = buildProseSelector(region);
-    return makeCss(selector, `letter-spacing: ${params.value}px !important`);
+    return makeCss(selector, `letter-spacing: ${params.value}em !important`);
   },
 });
 
 // ─── wordSpacing ──────────────────────────────────────────────────────────────
 const WordSpacingParamsSchema = z.object({
-  value: z.number().min(-4).max(20),
+  value: z.number().min(-0.1).max(1),
 });
 type WordSpacingParams = z.infer<typeof WordSpacingParamsSchema>;
 
 const wordSpacingOp = makeCssOp<WordSpacingParams>({
   id: "wordSpacing",
-  label: "Word spacing (px)",
+  label: "Word spacing (em)",
   target: "prose",
   protectedElements: PROTECTED_ELEMENTS,
   paramsSchema: WordSpacingParamsSchema,
   validate(params) {
-    if (params.value < -4 || params.value > 20) return "wordSpacing must be -4–20";
+    if (params.value < -0.1 || params.value > 1) return "wordSpacing must be -0.1–1em";
     return null;
   },
   buildCss(ctx, params) {
     if (params.value === 0) return null;
     const region = getContentRegionSelector(ctx.applyToWholePage);
     const selector = buildProseSelector(region);
-    return makeCss(selector, `word-spacing: ${params.value}px !important`);
+    return makeCss(selector, `word-spacing: ${params.value}em !important`);
   },
 });
 
@@ -233,6 +237,7 @@ export function registerTypographyOps(): void {
   registerOperation(wordSpacingOp);
   registerOperation(paragraphSpacingOp);
   registerOperation(maxContentWidthOp);
+  textShapeOperations.forEach(registerOperation);
 }
 
 // ─── Export op ids for use in UI ─────────────────────────────────────────────

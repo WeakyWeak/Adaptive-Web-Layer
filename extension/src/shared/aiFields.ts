@@ -38,11 +38,11 @@ const m = MotionPrefsSchema.shape;
 // Deliberately excluded: collapseSidebars / hiddenSelectors / preservedSelectors
 // (may hide navigation; manual only), appearance engine/forceDark (internal).
 export const AI_FIELDS: readonly AiField[] = [
-  { key: "fontFamily", group: "typography", label: "Font", unit: "", hint: "\"\" keeps the site font; Lexend or Atkinson Hyperlegible for readability", schema: bare(t.fontFamily) },
+  { key: "fontFamily", group: "typography", label: "Font", unit: "", hint: "\"\" keeps the site font; Atkinson Hyperlegible, Lexend or Verdana are plain and upright (no font helps every reader)", schema: bare(t.fontFamily) },
   { key: "fontSize", group: "typography", label: "Text size", unit: "px", hint: "body text size", schema: bare(t.fontSize) },
   { key: "lineHeight", group: "typography", label: "Line height", unit: "×", hint: "1.5 is typical, higher is airier", schema: bare(t.lineHeight) },
-  { key: "letterSpacing", group: "typography", label: "Letter spacing", unit: "px", hint: "0 is normal", schema: bare(t.letterSpacing) },
-  { key: "wordSpacing", group: "typography", label: "Word spacing", unit: "px", hint: "0 is normal", schema: bare(t.wordSpacing) },
+  { key: "letterSpacing", group: "typography", label: "Letter spacing", unit: "em", hint: "0 is normal; 0.05, 0.12 or 0.18 when letters crowd together", schema: bare(t.letterSpacing) },
+  { key: "wordSpacing", group: "typography", label: "Word spacing", unit: "em", hint: "0 is normal; 0.16 or 0.3 when words run together", schema: bare(t.wordSpacing) },
   { key: "paragraphSpacing", group: "typography", label: "Paragraph spacing", unit: "em", hint: "extra space after paragraphs", schema: bare(t.paragraphSpacing) },
   { key: "maxContentWidth", group: "typography", label: "Content width", unit: "px", hint: "narrower lines are easier to read; 650-800 for articles", schema: bare(t.maxContentWidth) },
   { key: "theme", group: "appearance", label: "Theme", unit: "", hint: "dark, light or sepia colours", schema: bare(a.theme) },
@@ -58,6 +58,11 @@ export const AI_FIELDS: readonly AiField[] = [
   { key: "reduceMotion", group: "motion", label: "Reduce motion", unit: "", hint: "calm animations and transitions", schema: bare(m.reduceMotion) },
   { key: "reduceParallax", group: "motion", label: "Reduce parallax", unit: "", hint: "stop scroll-linked movement", schema: bare(m.reduceParallax) },
   { key: "pauseAutoplay", group: "motion", label: "Pause autoplay", unit: "", hint: "pause auto-playing media", schema: bare(m.pauseAutoplay) },
+  // P11, last: small models over-use on/off settings near the top of the list.
+  { key: "noItalics", group: "typography", label: "No italics", unit: "", hint: "only when the reader mentions italics or dyslexia: upright text instead of italics (emphasis becomes semi-bold)", schema: bare(t.noItalics) },
+  { key: "unjustify", group: "typography", label: "Left-aligned text", unit: "", hint: "only when the reader mentions justified text, uneven gaps or dyslexia: left-align justified paragraphs", schema: bare(t.unjustify) },
+  { key: "noAllCaps", group: "typography", label: "No ALL CAPS styling", unit: "", hint: "only when the reader mentions capitals or dyslexia: show text the site styles in capitals in normal case", schema: bare(t.noAllCaps) },
+  { key: "backgroundTint", group: "appearance", label: "Background tint", unit: "", hint: "only when the reader mentions glare, a bright white page or a tint: a soft page colour (light and sepia themes); text is darkened to stay readable", schema: bare(a.backgroundTint) },
 ];
 
 const shape = Object.fromEntries(AI_FIELDS.map((field) => [field.key, field.schema.optional()]));

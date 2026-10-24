@@ -24,13 +24,20 @@ export const FINDING_TYPES = [
   "sticky-cover",
   "link-distinction",
   "focus-indicator",
+  // P11: the dyslexia lens (only when the profile in effect turns it on).
+  "justified-text",
+  "italic-body",
+  "all-caps-text",
+  "long-sentences",
+  "long-words",
+  "glare",
 ] as const;
 export type FindingType = typeof FINDING_TYPES[number];
 
 export const LEVELS = ["high", "medium", "low"] as const;
 export type Level = typeof LEVELS[number];
 
-export const CATEGORIES = ["contrast", "text-size", "density", "width", "headings", "layout", "controls"] as const;
+export const CATEGORIES = ["contrast", "text-size", "density", "width", "headings", "layout", "controls", "dyslexia"] as const;
 export type Category = typeof CATEGORIES[number];
 
 export const CATEGORY_OF: Record<FindingType, Category> = {
@@ -50,6 +57,12 @@ export const CATEGORY_OF: Record<FindingType, Category> = {
   "sticky-cover": "layout",
   "link-distinction": "controls",
   "focus-indicator": "controls",
+  "justified-text": "dyslexia",
+  "italic-body": "dyslexia",
+  "all-caps-text": "dyslexia",
+  "long-sentences": "dyslexia",
+  "long-words": "dyslexia",
+  glare: "dyslexia",
 };
 
 export const CATEGORY_LABEL: Record<Category, string> = {
@@ -60,6 +73,7 @@ export const CATEGORY_LABEL: Record<Category, string> = {
   headings: "Heading structure",
   layout: "Layout and overlap",
   controls: "Links and focus",
+  dyslexia: "Dyslexia lens",
 };
 
 // ── Readability score ────────────────────────────────────────────────────────
@@ -67,10 +81,11 @@ export const CATEGORY_LABEL: Record<Category, string> = {
 // Weights: severity high 10, medium 5, low 2; confidence high ×1, medium ×0.6,
 // low ×0.25 (an "uncertain" gradient finding costs a quarter of a measured one).
 // Caps add up to 100, so one category can never take the whole score, and
-// fixing (removing or downgrading) a finding can never lower it.
+// fixing (removing or downgrading) a finding can never lower it. P11 added the
+// "dyslexia" category (15); contrast, headings and layout gave up 5 each.
 export const SEVERITY_WEIGHT: Record<Level, number> = { high: 10, medium: 5, low: 2 };
 export const CONFIDENCE_WEIGHT: Record<Level, number> = { high: 1, medium: 0.6, low: 0.25 };
-export const CATEGORY_CAP: Record<Category, number> = { contrast: 25, "text-size": 15, density: 15, width: 10, headings: 10, layout: 15, controls: 10 };
+export const CATEGORY_CAP: Record<Category, number> = { contrast: 20, "text-size": 15, density: 15, width: 10, headings: 5, layout: 10, controls: 10, dyslexia: 15 };
 
 export const FixSchema = z.object({
   /** Settings patch (the same fields a model plan may use). */
@@ -160,6 +175,8 @@ export const InspectReportSchema = z.object({
   scanned: z.number().int().min(0),
   capped: z.boolean(),
   durationMs: z.number().min(0),
+  /** P11: the dyslexia lens was on, so the score is "for you". */
+  lens: z.boolean().optional(),
 });
 export type InspectReport = z.infer<typeof InspectReportSchema>;
 

@@ -16,8 +16,10 @@ import { ProviderRouter } from "../shared/providerRouter";
 import { draftIsUnsure, draftLedger, requestedFields, type LedgerSource } from "../shared/review";
 import { cloudConsentFor, isSiteEnabled, normalizeHostname, resolveAppearance, resolveFocus, resolveMotion, resolveTypography, SiteRuleSchema } from "../shared/settings";
 import { currentAiValues, exactSiteRule, restoreSiteRule, withSiteElements, withSitePatch, type SiteElements } from "../shared/sitePatch";
+import { ReadingAidsSchema } from "../shared/settings";
 import { loadSettings, saveSettings } from "../shared/storage";
 import { consumeAllowOnce } from "./consent";
+import { runDescribeMe } from "./describeMe";
 import { beginJob, cancelJob, clearJob, endJob, patchJob, writeJob } from "./jobs";
 import { runPlanner } from "./planner";
 import { problemLines } from "./reviewPrompt";
@@ -84,11 +86,17 @@ export async function runAiJob(tabId: number, request: string, kind: AiRunKind =
     await writeJob(errorJob(base, "unsupported", "AI commands only work on regular web pages.", "Open an http(s) page and try again."));
     return;
   }
-  if (await runShortcut(tabId, hostname, request, base)) return;
+  // A description of how reading feels is never a shortcut ("save as …", "undo").
+  if (kind !== "describeMe" && await runShortcut(tabId, hostname, request, base)) return;
 
   const settings = await loadSettings();
   if (!isSiteEnabled(settings, hostname)) {
     await writeJob(errorJob(base, "unsupported", "Adaptive Web Layer is turned off for this site.", "Turn it on from the popup first."));
+    return;
+  }
+  if (kind === "describeMe") {
+    await setPreview(tabId, null);
+    await runDescribeMe(tabId, request, base);
     return;
   }
 
@@ -322,14 +330,22 @@ export async function useFallback(tabId: number): Promise<string | null> {
   return null;
 }
 
-/** Save what the page currently shows (saved settings + any preview) as a named profile. */
-export async function saveProfile(tabId: number, name: string): Promise<string | null> {
+/**
+ * Save what the page currently shows (saved settings + any preview) as a named
+ * profile. P11: a described profile (describeMe) is built from the settings
+ * without this site's own rule, carries its lens, aids and note, and with
+ * `activate` becomes the active profile; its preview then ends.
+ */
+export async function saveProfile(tabId: number, name: string, activate = false): Promise<string | null> {
   const hostname = await tabHostname(tabId);
   if (!hostname) return "Open a regular web page first.";
   const settings = await loadSettings();
   if (settings.profiles.some((profile) => profile.name.toLowerCase() === name.toLowerCase())) return `A profile named "${name}" already exists.`;
   const job = await readJob(tabId);
-  const shown = job?.status === "preview" && job.changes ? withSitePatch(settings, hostname, job.changes) : settings;
+  const described = job?.kind === "describeMe" && job.profile ? job : null;
+  // A described profile is for every site: start from the settings without this site's own rule.
+  const base = described ? restoreSiteRule(settings, hostname, undefined) : settings;
+  const shown = job?.status === "preview" && job.changes ? withSitePatch(base, hostname, job.changes) : base;
   const profile = {
     id: `custom-${Date.now()}`,
     name,
@@ -338,6 +354,13 @@ export async function saveProfile(tabId: number, name: string): Promise<string |
     appearance: resolveAppearance(shown, hostname),
     focus: resolveFocus(shown, hostname),
     motion: resolveMotion(shown, hostname),
+    ...(described?.profile ? { dyslexiaLens: described.profile.lens, aids: ReadingAidsSchema.parse(described.profile.aids), note: described.profile.note } : {}),
   };
-  return await saveSettings({ ...settings, profiles: [...settings.profiles, profile] }) ? null : "Could not save the profile.";
+  const saved = await saveSettings({ ...settings, profiles: [...settings.profiles, profile], ...(activate ? { activeProfileId: profile.id } : {}) });
+  if (!saved) return "Could not save the profile.";
+  if (described) {
+    await setPreview(tabId, null);
+    await writeJob({ ...described, status: "nothing", stage: "Saved", interpretedRequest: activate ? `Saved "${name}" and turned it on for every site` : `Saved "${name}"` });
+  }
+  return null;
 }

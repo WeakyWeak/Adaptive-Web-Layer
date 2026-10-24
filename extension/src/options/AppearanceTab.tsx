@@ -1,9 +1,12 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import type { TypographyPrefs } from "../shared/settings";
-import { TypographyPrefsSchema, defaultSettings } from "../shared/settings";
+import { DOUBLE_PARAGRAPH_SPACING, LETTER_SPACING_PRESETS, TypographyPrefsSchema, WORD_SPACING_PRESETS, defaultSettings } from "../shared/settings";
 import { AppearancePrefsSchema, TEXT_COLOR_OPTIONS, type AppearancePrefs } from "../shared/settings";
 import { loadSettings, saveSettings } from "../shared/storage";
 import { FONT_OPTIONS } from "../content/typographyOps";
+import { SpacingSelect, TEXT_SHAPE_TOGGLES, TINT_OPTIONS } from "../ui/readingControls";
+
+const CLASSES = { row: "opt-row", label: "opt-label", value: "opt-value", select: "opt-select" };
 
 const DEFAULT_PREFS: TypographyPrefs = TypographyPrefsSchema.parse({});
 
@@ -83,8 +86,9 @@ export default function AppearanceTab(): React.ReactElement {
     fontFamily: prefs.fontFamily ? `"${prefs.fontFamily}", system-ui, sans-serif` : undefined,
     fontSize: `${prefs.fontSize}px`,
     lineHeight: prefs.lineHeight,
-    letterSpacing: prefs.letterSpacing !== 0 ? `${prefs.letterSpacing}px` : undefined,
-    wordSpacing: prefs.wordSpacing !== 0 ? `${prefs.wordSpacing}px` : undefined,
+    letterSpacing: prefs.letterSpacing !== 0 ? `${prefs.letterSpacing}em` : undefined,
+    wordSpacing: prefs.wordSpacing !== 0 ? `${prefs.wordSpacing}em` : undefined,
+    textAlign: prefs.unjustify ? "start" : undefined,
     marginBottom: prefs.paragraphSpacing !== 0 ? `${prefs.paragraphSpacing}em` : undefined,
     maxWidth: `${prefs.maxContentWidth}px`,
   };
@@ -94,8 +98,8 @@ export default function AppearanceTab(): React.ReactElement {
       <div className="opt-section">
         <h3 className="opt-section-title">Typography</h3>
         <p className="opt-section-note">
-          Note: dyslexia-friendly fonts (Lexend, Atkinson Hyperlegible) may help some readers —
-          individual results vary.
+          No font helps every reader (OpenDyslexic has no reliable evidence behind it); the
+          reading-fit test in the side panel measures what helps you.
         </p>
 
         <div className="opt-grid">
@@ -142,33 +146,8 @@ export default function AppearanceTab(): React.ReactElement {
             />
           </div>
 
-          {/* Letter spacing */}
-          <div className="opt-row">
-            <label htmlFor="opt-letter-spacing" className="opt-label">
-              Letter spacing <span className="opt-value">{prefs.letterSpacing}px</span>
-            </label>
-            <input
-              id="opt-letter-spacing"
-              type="range" min={-2} max={10} step={0.5}
-              className="opt-slider"
-              value={prefs.letterSpacing}
-              onChange={(e) => handleChange("letterSpacing", Number(e.target.value))}
-            />
-          </div>
-
-          {/* Word spacing */}
-          <div className="opt-row">
-            <label htmlFor="opt-word-spacing" className="opt-label">
-              Word spacing <span className="opt-value">{prefs.wordSpacing}px</span>
-            </label>
-            <input
-              id="opt-word-spacing"
-              type="range" min={-4} max={20} step={1}
-              className="opt-slider"
-              value={prefs.wordSpacing}
-              onChange={(e) => handleChange("wordSpacing", Number(e.target.value))}
-            />
-          </div>
+          <SpacingSelect id="opt-letter-spacing" label="Letter spacing" value={prefs.letterSpacing} presets={LETTER_SPACING_PRESETS} classes={CLASSES} onChange={(value) => handleChange("letterSpacing", value)} />
+          <SpacingSelect id="opt-word-spacing" label="Word spacing" value={prefs.wordSpacing} presets={WORD_SPACING_PRESETS} classes={CLASSES} onChange={(value) => handleChange("wordSpacing", value)} />
 
           {/* Paragraph spacing */}
           <div className="opt-row">
@@ -182,7 +161,18 @@ export default function AppearanceTab(): React.ReactElement {
               value={prefs.paragraphSpacing}
               onChange={(e) => handleChange("paragraphSpacing", Number(e.target.value))}
             />
+            <label className="opt-check">
+              <input type="checkbox" checked={prefs.paragraphSpacing >= DOUBLE_PARAGRAPH_SPACING} onChange={(e) => handleChange("paragraphSpacing", e.target.checked ? DOUBLE_PARAGRAPH_SPACING : 0)} />
+              Double paragraph spacing
+            </label>
           </div>
+
+          {TEXT_SHAPE_TOGGLES.map(([key, label]) => (
+            <label key={key} className="opt-row opt-check">
+              <input type="checkbox" checked={Boolean(prefs[key])} onChange={(e) => handleChange(key, e.target.checked)} />
+              {label}
+            </label>
+          ))}
 
           {/* Max content width */}
           <div className="opt-row">
@@ -249,6 +239,7 @@ function GlobalAppearanceControls(): React.ReactElement {
       <h3 className="opt-section-title">Appearance</h3>
       <p className="opt-section-note">Global appearance applies unless a profile or site rule overrides it.</p>
       <label className="opt-row">Theme<select className="opt-select" value={appearance.theme} onChange={(event) => updateAppearance({ theme: event.target.value as AppearancePrefs["theme"] })}><option value="light">Light</option><option value="dark">Dark</option><option value="sepia">Sepia / warm</option></select></label>
+      <label className="opt-row">Background tint (light and sepia themes)<select className="opt-select" value={appearance.backgroundTint} onChange={(event) => updateAppearance({ backgroundTint: event.target.value as AppearancePrefs["backgroundTint"] })}>{TINT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
       <label className="opt-row">Text colour<select className="opt-select" value={appearance.textColor} onChange={(event) => updateAppearance({ textColor: event.target.value as AppearancePrefs["textColor"] })}>{TEXT_COLOR_OPTIONS.map((name) => <option key={name} value={name}>{name ? `${name[0].toUpperCase()}${name.slice(1)} (readable shade)` : "Site colours"}</option>)}</select></label>
       <label className="opt-row">Appearance engine<select className="opt-select" value={appearance.engine} onChange={(event) => updateAppearance({ engine: event.target.value as AppearancePrefs["engine"] })}><option value="fast">Fast</option><option value="smart">Smart</option></select></label>
       <AppearanceRange label="Contrast" value={appearance.contrast} min={0.5} max={2} onChange={(value) => updateAppearance({ contrast: value })} />

@@ -133,8 +133,8 @@ export function draftLedger(changes: PlanChanges, items: readonly ElementItem[],
 }
 
 // Same rule as the planner: colours change only when the request is about colour.
-const COLOUR_FIELDS = new Set(["theme", "contrast", "brightness", "saturation", "textColor"]);
-const COLOUR_WORDS = /colou?r|dark|night|light|bright|dim|sepia|warm|theme|contrast|gr[ae]y|saturat|eye|glare|white|black|faint|strain|mode/i;
+const COLOUR_FIELDS = new Set(["theme", "contrast", "brightness", "saturation", "textColor", "backgroundTint"]);
+const COLOUR_WORDS = /colou?r|dark|night|light|bright|dim|sepia|warm|theme|contrast|gr[ae]y|saturat|eye|glare|white|black|faint|strain|mode|tint|cream|peach|background colou?r/i;
 
 /** A reviewer's setting, normalised like a plan's and checked against its field's bounds. */
 function validSetting(key: string, raw: unknown): string | number | boolean | undefined {
@@ -290,6 +290,10 @@ export const FIX_FIELDS: Readonly<Partial<Record<FindingType, readonly string[]>
   "sticky-cover": ["staticifyStickyHeaders"],
   "link-distinction": ["underlineLinks"],
   "focus-indicator": ["focusRing"],
+  "justified-text": ["unjustify"],
+  "italic-body": ["noItalics"],
+  "all-caps-text": ["noAllCaps"],
+  glare: ["backgroundTint"],
 };
 const CALM_FIELDS = ["reduceMotion", "reduceParallax", "pauseAutoplay"];
 /** "Clean this page" hides clutter; the only settings it may change calm the page down, never how text looks. */
@@ -320,7 +324,23 @@ const ASKED_FOR: Readonly<Record<string, RegExp>> = {
   focusRing: /\bfocus\b/i,
   reduceMotion: /\b(motion|animation\w*|moving)\b/i,
   textColor: /\b(text|font|letters?|words?) colou?rs?\b|\bcolou?r (of|for) the (text|font|letters|words)\b/i,
+  backgroundTint: /\b(tint\w*|cream|peach|background colou?r|glare|too bright)\b/i,
+  noItalics: /\bitalic\w*/i,
+  unjustify: /\b(justif\w*|left[- ]align\w*)\b/i,
+  noAllCaps: /\b(all caps|capitals|upper ?case)\b/i,
+  fixContrast: /\b(faint|pale|low contrast|contrast|hard to see|grey text|gray text)\b/i,
 };
+
+/**
+ * P11: on/off readability switches (the dyslexia ones, the P09 fixes) and the
+ * background tint are kept from a local draft only on requests about them, or
+ * about dyslexia (small models like to flip every on/off setting). Fix runs
+ * get them from measured problems instead.
+ */
+export const SWITCH_FIELDS: ReadonlySet<string> = new Set(["noItalics", "unjustify", "noAllCaps", "backgroundTint", "underlineLinks", "focusRing", "fixContrast"]);
+export function asksForSwitch(key: string, request: string): boolean {
+  return /\bdyslexi\w*/i.test(request) || (ASKED_FOR[key]?.test(request) ?? false);
+}
 
 /** The settings a typed request names; one-click Fix and Clean name none. */
 export function requestedFields(request: string, kind?: string): Set<string> {

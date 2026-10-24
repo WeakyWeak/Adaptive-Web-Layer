@@ -205,6 +205,17 @@ body {
   cursor: pointer;
 }
 
+.reading-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #cbd5e1;
+  cursor: pointer;
+}
+
+.reading-check input { accent-color: #818cf8; }
+
 .reading-actions {
   display: flex;
   align-items: center;

@@ -12,6 +12,7 @@ import type { Operation } from "../shared/registry";
 import { TEXT_COLOR_OPTIONS, type AppearancePrefs } from "../shared/settings";
 import { createBackdropResolver, requiredContrast } from "./contrast";
 import { buildProseSelector, getContentRegionSelector, PROTECTED_SELECTOR } from "./domUtils";
+import { clearMarks, hasOwnText, INITIAL_LIMIT, markerToken, SKIP, watchAdded } from "./markers";
 import { setStyleEntry } from "./styleEntry";
 
 const enabledSchema = z.object({ enabled: z.boolean() });
@@ -32,19 +33,9 @@ const focusRing: Operation<{ enabled: boolean }> = {
 
 // ─── Low-contrast text ───────────────────────────────────────────────────────
 const MARKER = "data-awl-contrast";
-const INITIAL_LIMIT = 3000;
-const BATCH_LIMIT = 600;
-const SKIP = `${PROTECTED_SELECTOR}, script, style, noscript, [data-awl-overlay], [data-awl-picker]`;
 /** Replacement colours: plain text and links, for light and dark backgrounds. */
 const COLOURS = { d: "#111111", l: "#f8f8f8", ld: "#0b57d0", ll: "#a8c7fa" } as const;
 type ColourKey = keyof typeof COLOURS;
-
-function hasOwnText(element: Element): boolean {
-  for (const node of Array.from(element.childNodes)) {
-    if (node.nodeType === 3 && (node.textContent ?? "").trim().length > 1) return true;
-  }
-  return false;
-}
 
 /** The replacement with the best contrast on `background`; links keep a link colour when it passes. */
 export function contrastColourFor(background: Color, link: boolean): ColourKey {
@@ -81,13 +72,13 @@ const fixContrast: Operation<z.infer<typeof FixContrastSchema>> = {
     const smartHandles = params.engine === "smart" && params.theme !== "sepia";
     if (!params.enabled || smartHandles || typeof document === "undefined" || !document.body) return setStyleEntry(ctx, "fixContrast", null);
     const win = window;
-    const token = globalThis.crypto?.randomUUID?.().slice(0, 8) ?? Math.random().toString(36).slice(2, 10);
+    const token = markerToken();
     markLowContrast(win, Array.from(document.body.querySelectorAll("*")).slice(0, INITIAL_LIMIT), token);
     const stop = watchAdded((batch) => markLowContrast(win, batch, token));
     const css = (Object.keys(COLOURS) as ColourKey[]).map((key) => `[${MARKER}="${token}-${key}"] { color: ${COLOURS[key]} !important; }`).join("\n");
     return setStyleEntry(ctx, "fixContrast", css, () => {
       stop();
-      document.querySelectorAll(`[${MARKER}^="${token}-"]`).forEach((element) => element.removeAttribute(MARKER));
+      clearMarks(MARKER, token);
     });
   },
 };
@@ -146,7 +137,7 @@ const textColor: Operation<z.infer<typeof TextColorSchema>> = {
     if (!params.value || typeof document === "undefined" || !document.body) return setStyleEntry(ctx, "textColor", null);
     const name = params.value;
     const win = window;
-    const token = globalThis.crypto?.randomUUID?.().slice(0, 8) ?? Math.random().toString(36).slice(2, 10);
+    const token = markerToken();
     // The text the typography settings reach (the article, or the whole page); links keep their own colour.
     const prose = `${buildProseSelector(getContentRegionSelector(ctx.applyToWholePage))}:not(a)`;
     const inProse = (elements: Element[]) => elements.filter((element) => { try { return element.matches(prose); } catch { return false; } });
@@ -156,30 +147,10 @@ const textColor: Operation<z.infer<typeof TextColorSchema>> = {
     const css = (["onLight", "onDark"] as const).map((shade) => `[${TEXT_MARKER}="${token}-${shade}"]:not(#awl-none):not(#awl-none) { color: ${TEXT_SHADES[name][shade]} !important; }`).join("\n");
     return setStyleEntry(ctx, "textColor", css, () => {
       stop();
-      document.querySelectorAll(`[${TEXT_MARKER}^="${token}-"]`).forEach((element) => element.removeAttribute(TEXT_MARKER));
+      clearMarks(TEXT_MARKER, token);
     });
   },
 };
-
-/** Content added later (infinite scroll, SPA renders), handed over in small batches; returns stop(). */
-function watchAdded(onBatch: (batch: Element[]) => void): () => void {
-  const added = new Set<Element>();
-  let timer: ReturnType<typeof setTimeout> | null = null;
-  const observer = new MutationObserver((records) => {
-    for (const record of records) record.addedNodes.forEach((node) => { if (node instanceof Element && !node.matches(SKIP)) added.add(node); });
-    if (added.size && !timer) timer = setTimeout(() => {
-      timer = null;
-      const batch = [...added].flatMap((root) => [root, ...Array.from(root.querySelectorAll("*"))]).slice(0, BATCH_LIMIT);
-      added.clear();
-      onBatch(batch);
-    }, 200);
-  });
-  observer.observe(document.body, { childList: true, subtree: true });
-  return () => {
-    observer.disconnect();
-    if (timer) clearTimeout(timer);
-  };
-}
 
 export const readabilityOperations: Operation<unknown>[] = [underlineLinks, focusRing, fixContrast, textColor] as Operation<unknown>[];
 

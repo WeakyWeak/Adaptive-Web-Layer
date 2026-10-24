@@ -84,3 +84,23 @@ export function contrastRange(foreground: Color, backgrounds: readonly Color[]):
   const ratios = backgrounds.map((background) => contrastRatio(foreground, background.a < 1 ? compositeColor(background, WHITE) : background));
   return { min: Math.min(...ratios), max: Math.max(...ratios) };
 }
+
+/** "#rrggbb" for an opaque colour. */
+export function toHex(color: Color): string {
+  return `#${[color.r, color.g, color.b].map((channel) => Math.round(channel).toString(16).padStart(2, "0")).join("")}`;
+}
+
+/**
+ * The text colour to use on `background` for at least `minimum`:1 contrast:
+ * `preferred` when it already passes, otherwise `preferred` darkened (or
+ * lightened, on a dark background) step by step until it does.
+ */
+export function readableTextOn(background: Color, minimum = 7, preferred: Color = { r: 34, g: 34, b: 34, a: 1 }): Color {
+  const toward = contrastRatio({ r: 0, g: 0, b: 0, a: 1 }, background) >= contrastRatio({ r: 255, g: 255, b: 255, a: 1 }, background) ? 0 : 255;
+  let color = { ...preferred, a: 1 };
+  for (let step = 0; step < 20 && contrastRatio(color, background) < minimum; step++) {
+    const mix = (channel: number) => channel + (toward - channel) * 0.25;
+    color = { r: mix(color.r), g: mix(color.g), b: mix(color.b), a: 1 };
+  }
+  return contrastRatio(color, background) >= minimum ? color : { r: toward, g: toward, b: toward, a: 1 };
+}

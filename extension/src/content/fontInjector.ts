@@ -21,6 +21,13 @@ export function injectBundledFonts(layer: StyleLayer): void {
   font-style: normal;
   font-display: swap;
 }
+@font-face {
+  font-family: "OpenDyslexic";
+  src: url("${base}opendyslexic-latin-400-normal.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
 `.trim();
 
   layer.set("__fonts__", css);

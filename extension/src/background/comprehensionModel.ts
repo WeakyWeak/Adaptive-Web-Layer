@@ -39,6 +39,14 @@ Reply with JSON: {"text": your rewrite, "gradeLevel": the grade level of your re
   define: () => `You explain one term from a web page for a general reader.
 Use the surrounding text to pick the right meaning.
 Reply with JSON: {"terms": [{"term": the term exactly as given, "definition": plain English, at most 25 words}]}.`,
+  readingView: () => `You rewrite one part of a web article into a reading view for readers with dyslexia.
+Keep every fact, number, name, date, condition and warning, and every placeholder. Do not add anything, and do not leave anything out.
+- Paragraphs: at most 3 short sentences each.
+- Split any sentence longer than 20 words into shorter ones.
+- Use common words where the meaning stays exactly the same; keep technical terms the text needs.
+- When the text lists three or more things, steps or options, make a list.
+- Keep the text's headings as headings, in order.
+Reply with JSON: {"blocks": [{"kind": "heading" | "paragraph" | "list", "text": string, "items": string[]}]}. For a list, "text" is a short lead-in (or "") and "items" holds the entries; otherwise "items" is [].`,
   translate: (input) => `You translate English text into ${languageName(input.target ?? "hi-IN")}, in natural, simple language and in the native script.
 Translate everything except placeholders, which stay exactly as written.
 Reply with JSON: {"text": the translation}.`,
@@ -58,7 +66,7 @@ export function buildComprehensionUserPrompt(kind: ComprehensionKind, input: Com
   return parts.join("\n\n");
 }
 
-const MAX_TOKENS: Record<ComprehensionKind, number> = { summarize: 700, glossary: 1200, simplify: 2048, define: 300, translate: 3072 };
+const MAX_TOKENS: Record<ComprehensionKind, number> = { summarize: 700, glossary: 1200, simplify: 2048, define: 300, translate: 3072, readingView: 2400 };
 
 /** One validated reply (still masked); one corrective retry on bad JSON or schema errors. */
 export async function runComprehension<K extends ComprehensionKind>(

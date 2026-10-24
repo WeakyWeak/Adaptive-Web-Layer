@@ -4,12 +4,14 @@
 
 import { parseMessage, type AnyMessage } from "../shared/messages";
 import { loadSettings, onSettingsChange, saveSettings } from "../shared/storage";
-import { isSiteEnabled, normalizeHostname, resolveAppearance, resolveTypography, type Settings } from "../shared/settings";
+import { AppearancePrefsSchema, isSiteEnabled, normalizeHostname, resolveAppearance, resolveTypography, TypographyPrefsSchema, type Settings } from "../shared/settings";
 import { ProviderRouter } from "../shared/providerRouter";
 import { readJob } from "../shared/aiJob";
 import { FIX_PAGE_REQUEST } from "../shared/elementPlan";
 import { applyJob, clearJobData, discardJob, requestReview, runAiJob, saveProfile, setElementEnabled, undoJob, useFallback } from "./aiJobs";
 import { clearUnderstand, failOrphanedUnderstand, hideOnPage, retryUnderstand, runPageKind, runSelection } from "./comprehension";
+// P11: registers the "readingView" page job with comprehension.ts.
+import "./readingView";
 import { applyInspectFixes, cancelInspect, clearInspect, explainInspect, failOrphanedInspect, runInspect, undoInspectFixes } from "./inspect";
 import { cancelJob, failOrphanedJobs } from "./jobs";
 
@@ -23,9 +25,10 @@ async function refreshBadge(tabId: number, url?: string): Promise<void> {
   try {
     const hostname = new URL(url).hostname;
     const settings = await loadSettings();
-    const defaults: Record<string, unknown> = { fontFamily: "", fontSize: 16, lineHeight: 1.5, letterSpacing: 0, wordSpacing: 0, paragraphSpacing: 0, maxContentWidth: 800 };
+    const defaults: Record<string, unknown> = TypographyPrefsSchema.parse({});
     const appearance = resolveAppearance(settings, hostname);
-    const appearanceActive = appearance.theme !== "light" || appearance.contrast !== 1 || appearance.brightness !== 1 || appearance.saturation !== 1;
+    const appearanceDefaults: Record<string, unknown> = AppearancePrefsSchema.parse({});
+    const appearanceActive = Object.entries(appearance).some(([key, value]) => key !== "engine" && value !== appearanceDefaults[key]);
     const active = isSiteEnabled(settings, hostname) && (appearanceActive || Object.entries(resolveTypography(settings, hostname)).some(([key, value]) => value !== defaults[key]));
     await chrome.action.setBadgeText({ tabId, text: active ? "ON" : "" });
     await chrome.action.setBadgeBackgroundColor({ tabId, color: "#4f46e5" });
@@ -198,7 +201,7 @@ function handle(msg: AnyMessage, reply: Reply, sender: chrome.runtime.MessageSen
       return false;
 
     case "AI_SAVE_PROFILE":
-      void saveProfile(msg.tabId, msg.name).then((error) => ack(reply, error));
+      void saveProfile(msg.tabId, msg.name, msg.activate).then((error) => ack(reply, error));
       return true;
 
     default:

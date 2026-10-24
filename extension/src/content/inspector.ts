@@ -7,19 +7,31 @@
 
 import { compositeColor, contrastRatio, parseCssColor, type Color } from "../lib/color";
 import { MAX_FINDINGS, type Finding, type Fix, type InspectReport } from "../shared/inspector";
-import { contrastRange, createBackdropResolver, gradientStops, imageLayerOf, requiredContrast } from "./contrast";
+import { longWordShare, wordsOf } from "../shared/syllables";
+import { contrastRange, createBackdropResolver, gradientStops, imageLayerOf, requiredContrast, toHex as hex } from "./contrast";
 import { getOrAssignId, protectionOf } from "./domSnapshot";
 import { PROSE_SELECTOR } from "./domUtils";
 import {
   contrastSeverity,
   headingIssues,
   HUGE_BLOCK_CHARS,
+  isGlare,
+  isLiteralCaps,
+  LENS_HUGE_BLOCK_CHARS,
+  LONG_SENTENCE_WORDS,
+  LONG_WORD_SYLLABLES,
   lineHeightSeverity,
   lineLengthIssue,
+  longWordSeverity,
   median,
+  MIN_LENS_SENTENCES,
+  MIN_LENS_WORDS,
+  sentenceLengths,
+  sentenceSeverity,
   SMALL_TEXT_PX,
   smallTextSeverity,
   stickySeverity,
+  styledShareSeverity,
   TIGHT_LINE_HEIGHT,
 } from "./inspectorRules";
 
@@ -42,6 +54,8 @@ export interface InspectOptions {
   limit?: number;
   /** Move keyboard focus to a few controls to check the focus indicator (restored afterwards). */
   testFocus?: boolean;
+  /** P11: also check through the dyslexia lens (stricter wall-of-text threshold). */
+  lens?: boolean;
 }
 
 interface Measured { element: Element; style: CSSStyleDeclaration; rect: DOMRect; ownText: number }
@@ -58,10 +72,6 @@ function ownTextLength(element: Element): number {
   let length = 0;
   for (const node of Array.from(element.childNodes)) if (node.nodeType === 3) length += (node.textContent ?? "").replace(/\s+/g, " ").trim().length;
   return length;
-}
-
-function hex(color: Color): string {
-  return `#${[color.r, color.g, color.b].map((channel) => Math.round(channel).toString(16).padStart(2, "0")).join("")}`;
 }
 
 function labelOf(element: Element): string {
@@ -233,17 +243,20 @@ function paragraphs(measured: readonly Measured[], options: InspectOptions): Dra
     }
   }
 
-  const huge = measured.filter((item) => item.element.tagName === "P" && (item.element.textContent ?? "").length > HUGE_BLOCK_CHARS);
+  const limit = options.lens ? LENS_HUGE_BLOCK_CHARS : HUGE_BLOCK_CHARS;
+  const huge = measured.filter((item) => item.element.tagName === "P" && (item.element.textContent ?? "").length > limit);
   if (huge.length) {
     const longest = huge.reduce((best, item) => ((item.element.textContent ?? "").length > (best.element.textContent ?? "").length ? item : best));
     const chars = (longest.element.textContent ?? "").replace(/\s+/g, " ").trim().length;
     drafts.push({
-      type: "huge-block", severity: chars > 2500 ? "medium" : "low", confidence: "high",
+      type: "huge-block", severity: chars > 2500 || (options.lens && chars > 2 * limit) ? "medium" : "low", confidence: "high",
       title: "Wall of text",
-      detail: `${plural(huge.length, "paragraph")} over ${HUGE_BLOCK_CHARS} characters; the longest has ${chars}.`,
+      detail: `${plural(huge.length, "paragraph")} over ${limit} characters; the longest has ${chars}.`,
       evidence: { paragraphs: huge.length, longestChars: chars },
       element: longest.element,
-      advice: "Use TL;DR or select the paragraph and choose Explain simply (Understand this page).",
+      advice: options.lens
+        ? "The Dyslexia reading view (Understand this page) splits it into short paragraphs; TL;DR gives the main points."
+        : "Use TL;DR or select the paragraph and choose Explain simply (Understand this page).",
     });
   }
   return drafts;
@@ -461,11 +474,140 @@ function focusIndicator(measured: readonly Measured[], doc: Document, options: I
   }];
 }
 
+
+// ── P11: dyslexia lens ───────────────────────────────────────────────────────
+const SENTENCE_BLOCKS = "p, li, dd, blockquote";
+const MAX_LENS_WORDS = 6000;
+
+/** Body text of the main content: measured elements with real text, outside code and navigation. */
+function bodyText(measured: readonly Measured[], options: InspectOptions): Measured[] {
+  return measured.filter((item) => item.ownText >= 2 && options.region.contains(item.element) && !item.element.closest(`${CODE}, ${NAVIGATION}`));
+}
+
+/** Share of `text` (by characters) that `test` picks, and the element with the most of it. */
+function styledShare(text: readonly Measured[], test: (item: Measured) => boolean): { share: number; chars: number; elements: number; top?: Measured } {
+  const picked = text.filter(test);
+  const chars = sum(picked);
+  const top = picked.length ? picked.reduce((best, item) => (item.ownText > best.ownText ? item : best)) : undefined;
+  return { share: chars / Math.max(1, sum(text)), chars, elements: picked.length, top };
+}
+
+function styleFindings(text: readonly Measured[], options: InspectOptions): Draft[] {
+  const drafts: Draft[] = [];
+  const percent = (share: number) => Math.round(share * 100);
+  const justified = styledShare(text, (item) => /^justify/.test(item.style.textAlign));
+  const justifiedLevel = justified.chars >= 200 ? styledShareSeverity(justified.share) : null;
+  if (justifiedLevel && justified.top) drafts.push({
+    type: "justified-text", severity: justifiedLevel, confidence: "high",
+    title: "Justified text",
+    detail: `${percent(justified.share)}% of the article text is justified, which stretches the gaps between words unevenly (${plural(justified.elements, "element")}).`,
+    evidence: { sharePercent: percent(justified.share), elements: justified.elements },
+    element: justified.top.element,
+    ...(!options.current.unjustify ? { fix: { changes: { unjustify: true }, description: "Left-align the article text" } } : { advice: "Left-aligned text is on; this text is outside the area it reaches." }),
+  });
+  const italic = styledShare(text, (item) => /^(italic|oblique)/.test(item.style.fontStyle));
+  const italicLevel = italic.chars >= 200 ? styledShareSeverity(italic.share) : null;
+  if (italicLevel && italic.top) drafts.push({
+    type: "italic-body", severity: italicLevel, confidence: "high",
+    title: "Body text in italics",
+    detail: `${percent(italic.share)}% of the article text is italic; slanted letters read slowest for many readers (${plural(italic.elements, "element")}).`,
+    evidence: { sharePercent: percent(italic.share), elements: italic.elements },
+    element: italic.top.element,
+    ...(!options.current.noItalics ? { fix: { changes: { noItalics: true }, description: "Show italic text upright (emphasis stays semi-bold)" } } : { advice: "Upright text is on; this text is outside the area it reaches." }),
+  });
+  const styledCaps = styledShare(text, (item) => item.style.textTransform === "uppercase" && item.ownText >= 20);
+  const capsLevel = styledCaps.chars >= 60 ? styledShareSeverity(styledCaps.share, 0.03) : null;
+  if (capsLevel && styledCaps.top) drafts.push({
+    type: "all-caps-text", severity: capsLevel, confidence: "high",
+    title: "Text styled in capitals",
+    detail: `${percent(styledCaps.share)}% of the article text is shown in ALL CAPS by the site's style (${plural(styledCaps.elements, "element")}); capitals hide word shapes.`,
+    evidence: { sharePercent: percent(styledCaps.share), elements: styledCaps.elements, styled: 1 },
+    element: styledCaps.top.element,
+    ...(!options.current.noAllCaps ? { fix: { changes: { noAllCaps: true }, description: "Show capitalised text in normal case" } } : { advice: "Normal case is on; this text is outside the area it reaches." }),
+  });
+  const typedCaps = text.filter((item) => item.style.textTransform !== "uppercase" && isLiteralCaps(ownTextOf(item.element)));
+  if (typedCaps.length) drafts.push({
+    type: "all-caps-text", severity: "medium", confidence: "high",
+    title: "Text typed in capitals",
+    detail: `${plural(typedCaps.length, "passage")} ${typedCaps.length === 1 ? "is" : "are"} typed in capital letters, so a style setting cannot change ${typedCaps.length === 1 ? "it" : "them"}.`,
+    evidence: { elements: typedCaps.length, styled: 0 },
+    element: typedCaps[0].element,
+    advice: "The page's own text is never rewritten. Select it and choose Explain simply, or use the Dyslexia reading view, to read it in normal case.",
+  });
+  return drafts;
+}
+
+function ownTextOf(element: Element): string {
+  return Array.from(element.childNodes).filter((node) => node.nodeType === 3).map((node) => node.textContent ?? "").join(" ");
+}
+
+function languageFindings(options: InspectOptions): Draft[] {
+  const blocks = Array.from(options.region.querySelectorAll(SENTENCE_BLOCKS)).filter((block) =>
+    !block.closest(`${CODE}, ${NAVIGATION}, ${IGNORE}`) && !block.parentElement?.closest(SENTENCE_BLOCKS)).slice(0, 400);
+  const texts = blocks.map((block) => ((block as HTMLElement).innerText ?? block.textContent ?? "").replace(/\s+/g, " ").trim()).filter((text) => text.length >= 20);
+  const drafts: Draft[] = [];
+  const lengths = texts.flatMap(sentenceLengths);
+  const typical = median(lengths);
+  const sentenceLevel = lengths.length >= MIN_LENS_SENTENCES ? sentenceSeverity(typical) : null;
+  if (sentenceLevel) {
+    const longest = blocks[texts.findIndex((text) => Math.max(...sentenceLengths(text)) === Math.max(...lengths))] ?? blocks[0];
+    drafts.push({
+      type: "long-sentences", severity: sentenceLevel, confidence: "high",
+      title: "Long sentences",
+      detail: `Sentences are ${Math.round(typical)} words long on average (median of ${lengths.length}); over ${LONG_SENTENCE_WORDS} is hard to hold in mind.`,
+      evidence: { medianWords: Math.round(typical), sentences: lengths.length, longest: Math.max(...lengths) },
+      element: longest,
+      advice: "The Dyslexia reading view (Understand this page) splits long sentences without changing the facts; the page itself is never rewritten.",
+    });
+  }
+  const words = texts.flatMap(wordsOf).slice(0, MAX_LENS_WORDS);
+  if (words.length >= MIN_LENS_WORDS) {
+    const share = longWordShare(words, LONG_WORD_SYLLABLES);
+    const level = longWordSeverity(share);
+    if (level) drafts.push({
+      type: "long-words", severity: level, confidence: "medium",
+      title: "Many long words",
+      detail: `${Math.round(share * 100)}% of ${words.length} words have ${LONG_WORD_SYLLABLES} or more syllables (everyday English has about 3–5%). Syllables are counted with English hyphenation patterns, so a few are off by one.`,
+      evidence: { sharePercent: Math.round(share * 100), words: words.length },
+      element: blocks[0],
+      advice: "Select a passage and choose Explain simply, or use the Dyslexia reading view; syllable marks arrive with the reading aids.",
+    });
+  }
+  return drafts;
+}
+
+function glare(text: readonly Measured[], options: InspectOptions): Draft[] {
+  const backdropOf = createBackdropResolver(window);
+  const glaring = text.filter((item) => {
+    const fg = parseCssColor(item.style.color);
+    const bg = backdropOf(item.element);
+    return Boolean(fg) && fg!.a >= 0.95 && bg !== "image" && isGlare(bg, fg!);
+  });
+  const share = sum(glaring) / Math.max(1, sum(text));
+  if (glaring.length === 0 || share < 0.5 || sum(glaring) < 200) return [];
+  const theme = String(options.current.theme ?? "light");
+  const canTint = options.current.backgroundTint === "none" && theme !== "dark";
+  return [{
+    type: "glare", severity: share >= 0.8 ? "medium" : "low", confidence: "high",
+    title: "Black text on bright white",
+    detail: `${Math.round(share * 100)}% of the article text is pure black on pure white, which many readers find glaring.`,
+    evidence: { sharePercent: Math.round(share * 100), background: "#ffffff", text: "#000000" },
+    element: glaring[0].element,
+    ...(canTint ? { fix: { changes: { backgroundTint: "cream" }, description: "Use a soft cream background (text stays at least 7:1)" } } : { advice: "A background tint is already set, or dark mode is on." }),
+  }];
+}
+
+function dyslexiaLens(measured: readonly Measured[], options: InspectOptions): Draft[] {
+  const text = bodyText(measured, options);
+  return [...styleFindings(text, options), ...languageFindings(options), ...glare(text, options)];
+}
+
 /** Run every check; returns findings with ids, highlight refs and fixes in snapshot-id form. */
 export async function inspectPage(doc: Document, options: InspectOptions): Promise<InspectReport> {
   const started = performance.now();
   const body = doc.body;
-  if (!body) return { findings: [], scanned: 0, capped: false, durationMs: 0 };
+  const lens = options.lens === true;
+  if (!body) return { findings: [], scanned: 0, capped: false, durationMs: 0, lens };
   const { measured, scanned, capped } = await measure(body, options.limit ?? SCAN_LIMIT);
   const drafts = [
     ...smallText(measured, options),
@@ -474,6 +616,7 @@ export async function inspectPage(doc: Document, options: InspectOptions): Promi
     ...headings(doc),
     ...layout(measured, doc, options),
     ...linkDistinction(measured, options),
+    ...(lens ? dyslexiaLens(measured, options) : []),
     // Last: it moves keyboard focus, which may restyle the page.
     ...focusIndicator(measured, doc, options),
   ].slice(0, MAX_FINDINGS);
@@ -489,6 +632,6 @@ export async function inspectPage(doc: Document, options: InspectOptions): Promi
       ...(suggestedFix ? { suggestedFix } : {}),
     };
   });
-  return { findings, scanned, capped, durationMs: Math.round(performance.now() - started) };
+  return { findings, scanned, capped, durationMs: Math.round(performance.now() - started), lens };
 }
 

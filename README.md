@@ -82,6 +82,7 @@ npm run eval:planner -- --target cloud --backend gemini --model gemini-3.5-flash
 npm run eval:comprehension -- --target local               # TL;DR, glossary, explain, define, local translation, injection (P08 fixtures)
 npm run eval:supervisor -- --target cloud --token <PROXY_TOKEN>   # does the reviewer catch planted draft mistakes? (P10)
 npm run eval:supervisor -- --target local                  # the local model as its own reviewer, for comparison
+npm run eval:describe -- --target local                    # "Describe how reading feels" → starting profile (P11)
 ```
 It prints the valid-plan rate, accuracy on 25 cases (including prompt-injection pages) and p50/p95 latency, and writes a report to `extension/eval/results/`.
 

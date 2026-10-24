@@ -200,7 +200,7 @@ describe("supervised fix", () => {
 
   it("fix: keeps only settings a measured problem calls for", async () => {
     await useSettings((settings) => ({ ...settings, ai: { ...settings.ai, mode: "local" } }));
-    plan = draftPlan({ changes: { fontSize: 20, theme: "dark", letterSpacing: 1, reduceMotion: true }, elements: { hide: [], dim: [], highlight: [] } });
+    plan = draftPlan({ changes: { fontSize: 20, theme: "dark", letterSpacing: 0.12, reduceMotion: true }, elements: { hide: [], dim: [], highlight: [] } });
     await runAiJob(TAB, FIX_PAGE_REQUEST, "fix");
     const job = (await readJob(TAB))!;
     // Small text was measured; nothing measured calls for a dark theme or wider letter spacing.
@@ -234,7 +234,9 @@ describe("supervised fix", () => {
     await runAiJob(TAB, CLEAN_PAGE_REQUEST, "clean");
     const job = (await readJob(TAB))!;
     expect(job.changes).toEqual({ reduceMotion: true });
-    expect(job.supervision?.ledger.find((entry) => entry.ref === "fixContrast")).toMatchObject({ status: "reverted", reason: expect.stringMatching(/cleaning hides clutter/) });
+    expect(job.supervision?.ledger.find((entry) => entry.ref === "fontSize")).toMatchObject({ status: "reverted", reason: expect.stringMatching(/cleaning hides clutter/) });
+    // The contrast switch never reached the draft: the request did not mention faint text.
+    expect(job.warnings?.join(" ")).toMatch(/Left fixContrast as the site has them/);
   });
 
   it("undoes a width change nobody asked for when the lines are already a comfortable length", async () => {

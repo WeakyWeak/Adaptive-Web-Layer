@@ -84,7 +84,7 @@ describe("defaultSettings", () => {
     expect(s.version).toBe(SETTINGS_VERSION);
     expect(s.global.applyToWholePage).toBe(false);
     expect(s.activeProfileId).toBeNull();
-    expect(s.profiles.map((profile) => profile.name)).toEqual(["Study", "Night", "Minimal", "Research"]);
+    expect(s.profiles.map((profile) => profile.name)).toEqual(["Study", "Night", "Minimal", "Research", "Dyslexia-friendly start"]);
     expect(s.profiles.find((profile) => profile.id === "night")?.appearance.theme).toBe("dark");
     expect(s.profiles.find((profile) => profile.id === "study")?.appearance.theme).toBe("sepia");
     expect(s.enabled).toBe(true);
@@ -300,7 +300,7 @@ describe("migrateSettings", () => {
 
   it("adds the P10 review settings and keeps page text off for the reviewer", () => {
     const migrated = migrateSettings({ version: 9, ai: { mode: "hybrid", cloudBackend: "gemini" }, privacy: { cloudSiteConsents: { "example.com": "allow" } } });
-    expect(migrated.version).toBe(10);
+    expect(migrated.version).toBe(SETTINGS_VERSION);
     expect(migrated.ai).toMatchObject({ mode: "hybrid", reviewPolicy: "always", reviewModel: "gemini-3.5-flash" });
     expect(migrated.privacy.cloudTextSites).toEqual({});
     expect(cloudTextAllowed(migrated.privacy, "example.com")).toBe(false);

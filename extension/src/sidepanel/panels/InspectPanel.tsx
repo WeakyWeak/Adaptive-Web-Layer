@@ -17,9 +17,10 @@ function Score({ report, previous }: { report: NonNullable<InspectState["report"
   return (
     <div className="card score-card">
       <div className="score-line">
-        <span className={`score score-${value >= 85 ? "good" : value >= 65 ? "fair" : "poor"}`} aria-label={`Readability score ${value} out of 100`}>{value}</span>
+        <span className={`score score-${value >= 85 ? "good" : value >= 65 ? "fair" : "poor"}`} aria-label={`${report.lens ? "Score for you" : "Readability score"} ${value} out of 100`}>{value}</span>
         <div>
-          <strong>Readability score · {scoreLabel(value)}</strong>
+          <strong>{report.lens ? "Score for you" : "Readability score"} · {scoreLabel(value)}</strong>
+          {report.lens && <p className="muted small">Includes the dyslexia lens from your profile: it measures what often slows readers with dyslexia. It is not a diagnosis.</p>}
           {previous !== undefined && previous !== value && <p className="muted small">was {previous} before the last change</p>}
         </div>
       </div>

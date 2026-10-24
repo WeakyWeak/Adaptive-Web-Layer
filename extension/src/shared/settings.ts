@@ -2,31 +2,47 @@ import { z } from "zod";
 
 // ─── Schema version ──────────────────────────────────────────────────────────
 // Bump this when you add a migration below.
-export const SETTINGS_VERSION = 10;
+export const SETTINGS_VERSION = 11;
 
 // ─── Typography preferences ──────────────────────────────────────────────────
 export const FONT_FAMILY_OPTIONS = [
   "",
   "Lexend",
   "Atkinson Hyperlegible",
+  "OpenDyslexic",
   "Georgia",
   "Verdana",
+  "Arial",
   "system-ui",
 ] as const;
+
+/** P11 spacing presets (em, so they scale with the text): research-backed steps, not limits. */
+export const LETTER_SPACING_PRESETS = [0, 0.05, 0.12, 0.18] as const;
+export const WORD_SPACING_PRESETS = [0, 0.16, 0.3] as const;
+/** "Paragraph spacing 2×": twice the usual one-line gap after a paragraph. */
+export const DOUBLE_PARAGRAPH_SPACING = 2;
 
 export const TypographyPrefsSchema = z.object({
   fontFamily: z.enum(FONT_FAMILY_OPTIONS).default(""), // "" = site default
   fontSize: z.number().min(10).max(48).default(16),
   lineHeight: z.number().min(1).max(3).default(1.5),
-  letterSpacing: z.number().min(-2).max(10).default(0),
-  wordSpacing: z.number().min(-4).max(20).default(0),
+  // P11: em (was px before settings v11).
+  letterSpacing: z.number().min(-0.05).max(0.5).default(0),
+  wordSpacing: z.number().min(-0.1).max(1).default(0),
   paragraphSpacing: z.number().min(0).max(5).default(0),
   maxContentWidth: z.number().min(400).max(2000).default(800),
+  // P11: dyslexia-friendly text shape (computed-style based; protected content untouched).
+  noItalics: z.boolean().default(false),
+  unjustify: z.boolean().default(false),
+  noAllCaps: z.boolean().default(false),
 });
 export type TypographyPrefs = z.infer<typeof TypographyPrefsSchema>;
 
 /** Named text colours a reader (or the AI) can pick; "" keeps the site's colours. Code picks a readable shade. */
 export const TEXT_COLOR_OPTIONS = ["", "red", "orange", "brown", "green", "teal", "blue", "purple", "pink", "grey", "black"] as const;
+/** P11: warm or soft page backgrounds (light and sepia themes only); text is darkened to ≥ 7:1. */
+export const BACKGROUND_TINTS = ["none", "cream", "peach", "yellow", "soft-grey"] as const;
+export type BackgroundTint = typeof BACKGROUND_TINTS[number];
 
 export const AppearancePrefsSchema = z.object({
   theme: z.enum(["light", "dark", "sepia"]).default("light"),
@@ -40,6 +56,7 @@ export const AppearancePrefsSchema = z.object({
   focusRing: z.boolean().default(false),
   fixContrast: z.boolean().default(false),
   textColor: z.enum(TEXT_COLOR_OPTIONS).default(""),
+  backgroundTint: z.enum(BACKGROUND_TINTS).default("none"),
 });
 export type AppearancePrefs = z.infer<typeof AppearancePrefsSchema>;
 
@@ -74,6 +91,15 @@ export const GlobalPrefsSchema = z.object({
 });
 export type GlobalPrefs = z.infer<typeof GlobalPrefsSchema>;
 
+/** P11/P12 reading aids a profile asks for (the aids themselves arrive in P12). */
+export const ReadingAidsSchema = z.object({
+  lineFocus: z.boolean().default(false),
+  ruler: z.boolean().default(false),
+  tts: z.boolean().default(false),
+  syllables: z.boolean().default(false),
+});
+export type ReadingAids = z.infer<typeof ReadingAidsSchema>;
+
 // ─── Named profile ───────────────────────────────────────────────────────────
 export const NamedProfileSchema = z.object({
   id: z.string(),
@@ -83,6 +109,11 @@ export const NamedProfileSchema = z.object({
   focus: FocusPrefsSchema.optional(),
   motion: MotionPrefsSchema.optional(),
   builtIn: z.boolean().default(false),
+  /** P11: the inspector also checks pages through the dyslexia lens and scores them "for you". */
+  dyslexiaLens: z.boolean().optional(),
+  aids: ReadingAidsSchema.optional(),
+  /** P11: shown under the profile ("a starting point, adjust anytime"). */
+  note: z.string().max(240).optional(),
 });
 export type NamedProfile = z.infer<typeof NamedProfileSchema>;
 
@@ -193,11 +224,26 @@ export function normalizeHostname(hostname: string): string {
   return hostname.trim().toLowerCase().replace(/^\.+|\.+$/g, "");
 }
 
+export const DYSLEXIA_START_ID = "dyslexia-start";
+export const DYSLEXIA_START_NOTE = "A starting point, adjust anytime. The reading-fit test finds what works for you.";
+
 export const BUILT_IN_PROFILES: NamedProfile[] = [
   { id: "study", name: "Study", builtIn: true, typography: TypographyPrefsSchema.parse({ fontFamily: "Atkinson Hyperlegible", fontSize: 18, lineHeight: 1.8, maxContentWidth: 900 }), appearance: AppearancePrefsSchema.parse({ theme: "sepia" }), focus: FocusPrefsSchema.parse({ collapseSidebars: true, dimNonMain: true }), motion: MotionPrefsSchema.parse({ reduceMotion: true }) },
   { id: "night", name: "Night", builtIn: true, typography: TypographyPrefsSchema.parse({ fontFamily: "Lexend", fontSize: 17, lineHeight: 1.7, maxContentWidth: 1000 }), appearance: AppearancePrefsSchema.parse({ theme: "dark" }), focus: FocusPrefsSchema.parse({}), motion: MotionPrefsSchema.parse({ reduceMotion: true }) },
   { id: "minimal", name: "Minimal", builtIn: true, typography: TypographyPrefsSchema.parse({ fontSize: 16, lineHeight: 1.5, maxContentWidth: 800 }), appearance: AppearancePrefsSchema.parse({}), focus: FocusPrefsSchema.parse({ collapseSidebars: true, dimNonMain: true, staticifyStickyHeaders: true }), motion: MotionPrefsSchema.parse({ reduceMotion: true, reduceParallax: true, pauseAutoplay: true }) },
   { id: "research", name: "Research", builtIn: true, typography: TypographyPrefsSchema.parse({ fontFamily: "Georgia", fontSize: 17, lineHeight: 1.75, maxContentWidth: 1100 }), appearance: AppearancePrefsSchema.parse({}), focus: FocusPrefsSchema.parse({}), motion: MotionPrefsSchema.parse({}) },
+  {
+    id: DYSLEXIA_START_ID,
+    name: "Dyslexia-friendly start",
+    builtIn: true,
+    typography: TypographyPrefsSchema.parse({ fontFamily: "Atkinson Hyperlegible", fontSize: 18, letterSpacing: 0.12, wordSpacing: 0.16, lineHeight: 1.6, unjustify: true, noItalics: true }),
+    appearance: AppearancePrefsSchema.parse({ backgroundTint: "cream" }),
+    focus: FocusPrefsSchema.parse({}),
+    motion: MotionPrefsSchema.parse({}),
+    dyslexiaLens: true,
+    aids: ReadingAidsSchema.parse({}),
+    note: DYSLEXIA_START_NOTE,
+  },
 ];
 
 // ─── Resolved typography for a hostname ──────────────────────────────────────
@@ -225,13 +271,10 @@ export function resolveTypography(
   const siteRule = matchingSiteRule(settings, hostname);
   if (siteRule?.enabled !== false) {
     resolved = { ...resolved, ...siteRule?.typography };
-    if (siteRule?.disabledOperations.includes("fontFamily")) resolved.fontFamily = "";
-    if (siteRule?.disabledOperations.includes("fontSize")) resolved.fontSize = base.fontSize;
-    if (siteRule?.disabledOperations.includes("lineHeight")) resolved.lineHeight = base.lineHeight;
-    if (siteRule?.disabledOperations.includes("letterSpacing")) resolved.letterSpacing = base.letterSpacing;
-    if (siteRule?.disabledOperations.includes("wordSpacing")) resolved.wordSpacing = base.wordSpacing;
-    if (siteRule?.disabledOperations.includes("paragraphSpacing")) resolved.paragraphSpacing = base.paragraphSpacing;
-    if (siteRule?.disabledOperations.includes("maxContentWidth")) resolved.maxContentWidth = base.maxContentWidth;
+    // A disabled operation falls back to its default (the site's own look).
+    for (const key of siteRule?.disabledOperations ?? []) {
+      if (key in base) (resolved as Record<string, unknown>)[key] = base[key as keyof TypographyPrefs];
+    }
   }
 
   return resolved;
@@ -259,6 +302,18 @@ function resolveFeature(settings: Settings, hostname: string, key: "focus" | "mo
   return schema.parse({ ...base, ...settings.global[key], ...(profile?.[key] ?? {}), ...(site?.[key] ?? {}) });
 }
 
+/** The named profile in effect on a site (the site's own, else the active one). */
+export function profileFor(settings: Settings, hostname: string): NamedProfile | undefined {
+  const site = matchingSiteRule(settings, hostname);
+  const id = site?.profileId ?? settings.activeProfileId;
+  return id ? settings.profiles.find((profile) => profile.id === id) : undefined;
+}
+
+/** P11: is the dyslexia lens on for this site (the profile in effect asks for it)? */
+export function lensActive(settings: Settings, hostname: string): boolean {
+  return isSiteEnabled(settings, hostname) && profileFor(settings, hostname)?.dyslexiaLens === true;
+}
+
 export function resolveFocus(settings: Settings, hostname: string): FocusPrefs { return FocusPrefsSchema.parse(resolveFeature(settings, hostname, "focus", FocusPrefsSchema)); }
 export function resolveMotion(settings: Settings, hostname: string): MotionPrefs { return MotionPrefsSchema.parse(resolveFeature(settings, hostname, "motion", MotionPrefsSchema)); }
 
@@ -279,7 +334,29 @@ export function matchingSiteRule(settings: Settings, hostname: string): SiteRule
 // Add a function here when SETTINGS_VERSION bumps.
 // Each fn takes the raw object from storage and returns the migrated object.
 type MigrationFn = (raw: Record<string, unknown>) => Record<string, unknown>;
+/** v11: letter and word spacing moved from px to em (px / 16, the default text size). */
+function spacingToEm(typography: unknown): unknown {
+  if (typeof typography !== "object" || typography === null) return typography;
+  const next = { ...typography as Record<string, unknown> };
+  const convert = (key: string, min: number, max: number) => {
+    if (typeof next[key] === "number") next[key] = Math.min(max, Math.max(min, Math.round((next[key] as number) / 16 * 100) / 100));
+  };
+  convert("letterSpacing", -0.05, 0.5);
+  convert("wordSpacing", -0.1, 1);
+  return next;
+}
+
 const migrations: Record<number, MigrationFn> = {
+  11: (raw) => {
+    const global = typeof raw.global === "object" && raw.global !== null ? raw.global as Record<string, unknown> : undefined;
+    const withTypography = (item: unknown) => typeof item === "object" && item !== null ? { ...item as Record<string, unknown>, typography: spacingToEm((item as Record<string, unknown>).typography) } : item;
+    return {
+      ...raw,
+      ...(global ? { global: withTypography(global) } : {}),
+      ...(Array.isArray(raw.profiles) ? { profiles: raw.profiles.map(withTypography) } : {}),
+      ...(Array.isArray(raw.siteRules) ? { siteRules: raw.siteRules.map(withTypography) } : {}),
+    };
+  },
   10: (raw) => raw, // P10: review settings and text consent, added with defaults
   9: (raw) => {
     const ai = typeof raw.ai === "object" && raw.ai !== null ? raw.ai as Record<string, unknown> : {};

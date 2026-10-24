@@ -1,12 +1,49 @@
 import React, { useEffect, useState } from "react";
-import type { SelectionResult, UnderstandState } from "../../shared/comprehension";
+import type { ReadingViewResult, SelectionResult, UnderstandState } from "../../shared/comprehension";
 import { languageName } from "../../shared/languages";
 import ConsentCard from "../ConsentCard";
 import { command, useUnderstand } from "../hooks";
 import type { SidePanelSectionProps } from "./index";
 
 const SOURCE_LABEL: Record<string, string> = { local: "Local AI", cloud: "Cloud AI", sarvam: "Sarvam (cloud)", demo: "Demo mode, no AI" };
-const KIND_LABEL: Record<string, string> = { summarize: "TL;DR", glossary: "Glossary", simplify: "Explain simply", define: "Define", translate: "Translate" };
+const KIND_LABEL: Record<string, string> = { summarize: "TL;DR", glossary: "Glossary", readingView: "Dyslexia reading view", simplify: "Explain simply", define: "Define", translate: "Translate" };
+
+const REVIEW_LABEL: Record<ReadingViewResult["checks"]["review"], string> = {
+  reviewed: "reviewed by the cloud",
+  "not-allowed": "not reviewed by the cloud",
+  failed: "cloud review failed",
+};
+
+/** P11: draft → code check → cloud review → preview, and the way back to the original. */
+function ReadingViewCard({ view, hostname, settings, send, running }: { view: ReadingViewResult; hostname: string; running: boolean; send: (message: Record<string, unknown>) => Promise<void> } & Pick<SidePanelSectionProps, "settings">): React.ReactElement {
+  const { checks } = view;
+  const canAskCloud = checks.review === "not-allowed" && view.source !== "demo" && settings.ai.mode !== "local";
+  return (
+    <div className="card">
+      <div className="meta"><strong>Dyslexia reading view</strong><Source source={view.source} cached={view.cached} /></div>
+      <ol className="steps small">
+        <li>Drafted: {view.blocks.length} short blocks{view.summary.length ? " and a 3-line summary" : ""}{view.coverage < 0.99 ? ` (first ${Math.round(view.coverage * 100)}% of the article)` : ""}</li>
+        <li>Checked by code: {checks.flagged ? `${checks.flagged} of ${checks.parts} part(s) flagged` : "no changed numbers, names or negations"}</li>
+        <li>{checks.review === "reviewed" ? `Reviewed by the cloud: ${checks.reviewedParts} of ${checks.parts} part(s)` : REVIEW_LABEL[checks.review]}</li>
+        <li>{view.shown ? "Shown over the page; the page itself is unchanged" : "Hidden; the page shows its original text"}</li>
+      </ol>
+      <Notes notes={view.notes} />
+      <div className="row">
+        {view.shown
+          ? <button onClick={() => void send({ type: "UNDERSTAND_HIDE", what: "readingView" })}>Back to the original</button>
+          : <button className="primary" disabled={running} onClick={() => void send({ type: "UNDERSTAND_RUN", kind: "readingView" })}>Show the reading view</button>}
+        <button disabled={running} onClick={() => void send({ type: "UNDERSTAND_RUN", kind: "readingView", refresh: true })}>Make it again</button>
+      </div>
+      {canAskCloud && (
+        <details>
+          <summary>Have the cloud check it against the original</summary>
+          <p className="muted small">The cloud reviewer needs to read this page's text. Tick "Also share page text with the reviewer" to allow it for {hostname}.</p>
+          <ConsentCard hostname={hostname} backend={settings.ai.cloudBackend} onDecided={(decision) => { if (decision !== "deny") void send({ type: "UNDERSTAND_RUN", kind: "readingView", refresh: true }); }} />
+        </details>
+      )}
+    </div>
+  );
+}
 
 function Source({ source, cached }: { source: string; cached: boolean }): React.ReactElement {
   return <span className="chip">{SOURCE_LABEL[source] ?? source}{cached ? " · saved result" : ""}</span>;
@@ -66,10 +103,12 @@ export default function UnderstandPanel({ tab, settings }: SidePanelSectionProps
         {state?.glossary?.shown
           ? <button disabled={!usable} onClick={() => void send({ type: "UNDERSTAND_HIDE", what: "glossary" })}>Hide glossary</button>
           : <button disabled={!usable || Boolean(running)} onClick={() => void send({ type: "UNDERSTAND_RUN", kind: "glossary" })}>Show glossary</button>}
+        <button disabled={!usable || Boolean(running)} onClick={() => void send({ type: "UNDERSTAND_RUN", kind: "readingView" })} title="The AI rewrites the main text into short paragraphs and lists, code checks the facts, and (with your consent) the cloud reviews it">Dyslexia reading view</button>
       </div>
       <ul className="muted small help">
         <li><strong>TL;DR</strong>: 3–5 sentence summary of the article, shown at the top of the page.</li>
         <li><strong>Glossary</strong>: the AI picks up to 12 hard words or jargon used in this article (for example "basis points"), underlines them on the page and explains each in plain English. Hover an underlined word, or press Show below, to see its meaning.</li>
+        <li><strong>Dyslexia reading view</strong>: the main text as short paragraphs and lists with a 3-line summary first, checked against the original for changed facts. It opens over the page; the original stays one click away.</li>
         <li><strong>Selection</strong>: select text on the page and press ✨ Understand to explain it simply, define it or translate it to Hindi.</li>
       </ul>
       <p className="muted small">The page's own text is never changed.</p>
@@ -113,6 +152,7 @@ export default function UnderstandPanel({ tab, settings }: SidePanelSectionProps
           <Notes notes={state.glossary.notes} />
         </details>
       )}
+      {state?.readingView && tab && <ReadingViewCard view={state.readingView} hostname={tab.hostname} settings={settings} send={send} running={Boolean(running)} />}
       {state?.selection && <Selection result={state.selection} />}
     </div>
   );

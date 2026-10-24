@@ -183,3 +183,11 @@ button.link { padding: 0 6px; font-size: 12px; }
 .shots button[aria-pressed="true"] { border-color: var(--accent); }
 @media (prefers-reduced-motion: reduce) { .step-running .step-dot { animation: none; } }
 .refused-note { color: var(--muted); font-size: 12px; }
+
+/* P11: reading support */
+textarea { width: 100%; padding: 7px 9px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font: inherit; resize: vertical; }
+textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.describe form { display: flex; flex-direction: column; gap: 6px; }
+.reading-support { display: flex; flex-direction: column; gap: 12px; }
+.reading-support > details > summary { cursor: pointer; margin-bottom: 8px; }
+.steps { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px; }

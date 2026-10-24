@@ -5,7 +5,7 @@
 import { z } from "zod";
 import { aiField, type PlanChanges } from "./aiFields";
 import { suggestElements } from "./elementPlan";
-import { TEXT_COLOR_OPTIONS } from "./settings";
+import { BUILT_IN_PROFILES, DYSLEXIA_START_ID, TEXT_COLOR_OPTIONS, type BackgroundTint } from "./settings";
 import { numberBounds } from "./jsonSchema";
 import type { DomSnapshot, Plan } from "./plan";
 
@@ -20,12 +20,25 @@ interface IntentRule {
 const num = (current: Current, key: string): number => Number(current[key]);
 
 const DIM_DISTRACTIONS = "dim distractions";
+
+/** P11: "dyslexia" means the built-in "Dyslexia-friendly start" profile's settings (a starting point). */
+function dyslexiaStart(): PlanChanges {
+  const profile = BUILT_IN_PROFILES.find((item) => item.id === DYSLEXIA_START_ID)!;
+  const { fontFamily, fontSize, letterSpacing, wordSpacing, lineHeight, unjustify, noItalics } = profile.typography;
+  return { fontFamily, fontSize, letterSpacing, wordSpacing, lineHeight, unjustify, noItalics, backgroundTint: profile.appearance.backgroundTint };
+}
+
+const TINT_WORDS: Array<[RegExp, BackgroundTint]> = [[/\bpeach\b/, "peach"], [/\byellow\b/, "yellow"], [/\bgr[ae]y\b/, "soft-grey"]];
 const COLOUR_NAMES = "red|orange|brown|green|teal|blue|purple|pink|gr[ae]y|black";
 /** "make the text red", "red text", "text colour blue". */
 const TEXT_COLOR_REQUEST = new RegExp(`\\b(text|font|letters?|words?)\\b.*\\b(${COLOUR_NAMES})\\b|\\b(${COLOUR_NAMES}) (text|font|letters|words)\\b`);
 
 const RULES: readonly IntentRule[] = [
-  { pattern: /\b(dyslexi\w*)\b/, label: "dyslexia-friendly text", changes: (c) => ({ fontFamily: "Lexend", letterSpacing: 1, wordSpacing: 2, lineHeight: Math.max(num(c, "lineHeight"), 1.8) }) },
+  { pattern: /\b(dyslexi\w*)\b/, label: "dyslexia-friendly start", changes: () => dyslexiaStart() },
+  { pattern: /\bitalic\w*/, label: "upright text", changes: () => ({ noItalics: true }) },
+  { pattern: /\bjustif\w*/, label: "left-aligned text", changes: () => ({ unjustify: true }) },
+  { pattern: /\b(all caps|capitals|upper ?case)\b/, label: "normal case", changes: () => ({ noAllCaps: true }) },
+  { pattern: /\b(tint\w*|cream|peach)\b|\b(yellow|soft gr[ae]y) (background|page)\b/, label: "background tint", changes: (_c, request) => ({ backgroundTint: TINT_WORDS.find(([words]) => words.test(request))?.[1] ?? "cream" }) },
   { pattern: /\b(bigger|larger|increase|enlarge)\b.*\b(text|font|letters?|size)\b|\b(text|font)\b.*\b(bigger|larger)\b/, label: "larger text", changes: (c) => ({ fontSize: num(c, "fontSize") + 4 }) },
   { pattern: /\b(smaller|decrease|reduce)\b.*\b(text|font)\b|\b(text|font)\b.*\bsmaller\b/, label: "smaller text", changes: (c) => ({ fontSize: num(c, "fontSize") - 2 }) },
   { pattern: /\b(easier to read|more readable|readability|hard to read)\b/, label: "easier reading", changes: (c) => ({ fontSize: Math.max(num(c, "fontSize"), 18), lineHeight: Math.max(num(c, "lineHeight"), 1.7), maxContentWidth: 760 }) },

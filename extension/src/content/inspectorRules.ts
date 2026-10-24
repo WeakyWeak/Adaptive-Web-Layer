@@ -86,3 +86,53 @@ export function headingIssues(headings: readonly HeadingInfo[]): HeadingIssue[] 
   if (empty.length) issues.push({ type: "empty-heading", severity: "medium", indexes: empty, detail: `${empty.length} empty heading${empty.length === 1 ? "" : "s"} (announced by screen readers with no text).` });
   return issues;
 }
+
+// ── P11: the dyslexia lens ───────────────────────────────────────────────────
+// Sources (see docs/ARCHITECTURE.md): BDA style guide (left-aligned text, no
+// ALL CAPS body text, off-white backgrounds), Rello & Baeza-Yates (italics
+// read slowest). Thresholds are this project's choices, not clinical cut-offs.
+
+/** Under the lens a paragraph longer than this is a wall of text (stricter than HUGE_BLOCK_CHARS). */
+export const LENS_HUGE_BLOCK_CHARS = 600;
+/** Median words per sentence above this is hard going. */
+export const LONG_SENTENCE_WORDS = 20;
+/** A word this many syllables long counts as long. */
+export const LONG_WORD_SYLLABLES = 4;
+/** Fewer words or sentences than these and the text is too short to judge. */
+export const MIN_LENS_WORDS = 80;
+export const MIN_LENS_SENTENCES = 4;
+
+/** Share (0–1) of the body text styled a way the lens flags (justified, italic, CSS capitals). */
+export function styledShareSeverity(share: number, minimum = 0.1): Level | null {
+  if (share < minimum) return null;
+  return share >= 0.5 ? "high" : share >= 0.25 ? "medium" : "low";
+}
+
+export function sentenceSeverity(medianWords: number): Level | null {
+  if (medianWords <= LONG_SENTENCE_WORDS) return null;
+  return medianWords > 28 ? "high" : "medium";
+}
+
+/** `share`: fraction of words with LONG_WORD_SYLLABLES or more (everyday English is about 3–5%). */
+export function longWordSeverity(share: number): Level | null {
+  if (share < 0.08) return null;
+  return share >= 0.15 ? "high" : share >= 0.11 ? "medium" : "low";
+}
+
+/** Words in each sentence of `text` (a sentence ends at . ! or ? before a space and a capital, or at the end). */
+export function sentenceLengths(text: string): number[] {
+  return text.replace(/\s+/g, " ").split(/(?<=[.!?]["”’)]?)\s+(?=["“‘(]?[A-Z0-9])/)
+    .map((sentence) => sentence.split(" ").filter((word) => /[A-Za-z0-9]/.test(word)).length)
+    .filter((words) => words > 0);
+}
+
+/** Pure white behind pure black: the glare the BDA guide suggests softening. */
+export function isGlare(background: { r: number; g: number; b: number }, text: { r: number; g: number; b: number }): boolean {
+  return Math.min(background.r, background.g, background.b) >= 250 && Math.max(text.r, text.g, text.b) <= 20;
+}
+
+/** Text typed in capitals (not styled): at least 20 letters, 80% of them capitals. */
+export function isLiteralCaps(text: string): boolean {
+  const letters = text.replace(/[^A-Za-z]/g, "");
+  return letters.length >= 20 && letters.replace(/[^A-Z]/g, "").length / letters.length >= 0.8;
+}

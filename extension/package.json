@@ -13,7 +13,8 @@
     "e2e": "npx playwright test",
     "eval:planner": "npx vite-node scripts/evalPlanner.ts --",
     "eval:comprehension": "npx vite-node scripts/evalComprehension.ts --",
-    "eval:supervisor": "npx vite-node scripts/evalSupervisor.ts --"
+    "eval:supervisor": "npx vite-node scripts/evalSupervisor.ts --",
+    "eval:describe": "npx vite-node scripts/evalDescribe.ts --"
   },
   "dependencies": {
     "react": "^18.3.1",

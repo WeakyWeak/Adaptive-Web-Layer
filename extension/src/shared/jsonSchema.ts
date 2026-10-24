@@ -55,6 +55,16 @@ function elementsJsonSchema(blockIds: readonly string[]): JsonSchema {
   };
 }
 
+/** The bounded settings patch every model reply uses (plans, reviews, described profiles). */
+export function changesJsonSchema(): JsonSchema {
+  return {
+    type: "object",
+    additionalProperties: false,
+    properties: Object.fromEntries(AI_FIELDS.map((field) => [field.key, fieldJsonSchema(field)])),
+    description: "Only the settings that should change; omit everything else",
+  };
+}
+
 /**
  * The plan schema; `elements` is offered only when the page has candidate blocks.
  * It is required (lists may be empty): llama.cpp's grammar emits optional
@@ -75,12 +85,7 @@ export function planJsonSchema(blockIds: readonly string[] = [], expandable: rea
     ],
     properties: {
       interpretedRequest: { type: "string", maxLength: 200, description: "What you understood the user to want" },
-      changes: {
-        type: "object",
-        additionalProperties: false,
-        properties: Object.fromEntries(AI_FIELDS.map((field) => [field.key, fieldJsonSchema(field)])),
-        description: "Only the settings that should change; omit everything else",
-      },
+      changes: changesJsonSchema(),
       ...(withElements ? { elements: elementsJsonSchema(blockIds) } : {}),
       ...(withExpand ? { expand: { type: "array", maxItems: 3, items: { type: "string", enum: [...expandable] }, description: "Blocks to look inside before deciding; usually empty" } } : {}),
       reasons: { type: "array", maxItems: 8, items: { type: "string", maxLength: 200 } },
@@ -154,5 +159,6 @@ export function zodToJsonSchema(schema: z.ZodTypeAny): JsonSchema {
     return { type: schema.isInt ? "integer" : "number", ...numberBounds(schema), ...description };
   }
   if (schema instanceof z.ZodEnum) return { type: "string", enum: [...schema.options as string[]], ...description };
+  if (schema instanceof z.ZodBoolean) return { type: "boolean", ...description };
   throw new Error(`zodToJsonSchema: unsupported Zod type ${schema.constructor.name}`);
 }

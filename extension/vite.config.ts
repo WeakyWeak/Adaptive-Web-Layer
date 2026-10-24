@@ -22,6 +22,8 @@ export default defineConfig({
         popup: resolve(__dirname, "popup/index.html"),
         options: resolve(__dirname, "options/index.html"),
         sidepanel: resolve(__dirname, "sidepanel/index.html"),
+        // P11: the reading-fit test's passage reader (an iframe inside the side panel and Options).
+        fitreader: resolve(__dirname, "fitreader/index.html"),
         background: resolve(__dirname, "src/background/index.ts"),
         // content is NOT here — it is built separately as IIFE
       },

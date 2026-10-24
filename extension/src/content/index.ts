@@ -1,6 +1,6 @@
 import { parseMessage } from "../shared/messages";
 import { loadSettings, onSettingsChange, saveSettings } from "../shared/storage";
-import { resolveTypography, resolveAppearance, resolveFocus, resolveMotion, isSiteEnabled, matchingSiteRule, type Settings } from "../shared/settings";
+import { resolveTypography, resolveAppearance, resolveFocus, resolveMotion, isSiteEnabled, lensActive, matchingSiteRule, type Settings } from "../shared/settings";
 import { getStyleLayer } from "./styleLayer";
 import { registerTypographyOps } from "./typographyOps";
 import { applyTypography, applyAppearance, applyFocus, revertTypography, revertAppearance, revertFocus } from "./applier";
@@ -14,6 +14,7 @@ import { ElementOutline } from "./elementOutline";
 import { clearPreviewMarks, previewSelectors } from "./previewMarks";
 import { extractPageText } from "./pageText";
 import { SummaryCard } from "./summaryCard";
+import { ReadingViewOverlay, readingViewStyle } from "./readingView";
 import { activeGlossaryRanges, GlossaryTooltip, registerComprehensionOps } from "./glossary";
 import { SelectionPopover } from "./selectionPopover";
 import { applyPlan, type Revert } from "../shared/registry";
@@ -88,6 +89,7 @@ if (isRestrictedPage()) {
   const outline = new ElementOutline();
   // P08: comprehension UI. Added next to the page's text; never changes it.
   const summaryCard = new SummaryCard();
+  const readingView = new ReadingViewOverlay();
   const glossaryTooltip = new GlossaryTooltip();
   let glossaryRevert: Revert | null = null;
   const popover = new SelectionPopover((request) => {
@@ -292,6 +294,16 @@ if (isRestrictedPage()) {
       return false;
     }
 
+    if (msg.type === "SHOW_READING_VIEW") {
+      if (msg.view) {
+        const settings = currentSettings;
+        const style = settings ? readingViewStyle(resolveTypography(settings, hostname), resolveAppearance(settings, hostname)) : "";
+        readingView.show(msg.view, document.title, style);
+      } else readingView.hide();
+      sendResponse({ type: "ACK", ok: true });
+      return false;
+    }
+
     if (msg.type === "SHOW_GLOSSARY") {
       glossaryRevert?.();
       glossaryRevert = null;
@@ -332,6 +344,7 @@ if (isRestrictedPage()) {
           region,
           current: currentAiValues(effective, hostname),
           smartColours: appearance.engine === "smart" && appearance.theme !== "sepia",
+          lens: lensActive(effective, hostname),
         });
         sendResponse({ type: "INSPECT_RESULT", report });
       })().catch((error) => sendResponse({ type: "ACK", ok: false, error: String(error) }));
@@ -355,6 +368,7 @@ if (isRestrictedPage()) {
           region,
           current: currentAiValues(effective, hostname),
           smartColours: appearance.engine === "smart" && appearance.theme !== "sepia",
+          lens: lensActive(effective, hostname),
           hidden,
         });
         sendResponse({ type: "MEASURE_RESULT", ...result });

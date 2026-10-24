@@ -1,9 +1,12 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import type { Settings, TypographyPrefs } from "../../shared/settings";
-import { resolveTypography, TypographyPrefsSchema } from "../../shared/settings";
+import { DOUBLE_PARAGRAPH_SPACING, LETTER_SPACING_PRESETS, resolveTypography, TypographyPrefsSchema, WORD_SPACING_PRESETS } from "../../shared/settings";
 import { withSiteTypography } from "../../shared/sitePatch";
 import { loadSettings, patchSettings } from "../../shared/storage";
 import { FONT_OPTIONS } from "../../content/typographyOps";
+import { SpacingSelect, TEXT_SHAPE_TOGGLES } from "../../ui/readingControls";
+
+const CLASSES = { row: "reading-row", label: "reading-label", value: "reading-value", select: "reading-select" };
 
 const DEFAULT_PREFS: TypographyPrefs = TypographyPrefsSchema.parse({});
 
@@ -127,33 +130,8 @@ export default function ReadingPanel(): React.ReactElement {
         />
       </div>
 
-      <div className="reading-row">
-        <label htmlFor="rp-letter-spacing" className="reading-label">
-          Letter spacing <span className="reading-value">{prefs.letterSpacing}px</span>
-        </label>
-        <input
-          id="rp-letter-spacing"
-          type="range"
-          min={-2} max={10} step={0.5}
-          className="reading-slider"
-          value={prefs.letterSpacing}
-          onChange={(e) => handleChange("letterSpacing", Number(e.target.value))}
-        />
-      </div>
-
-      <div className="reading-row">
-        <label htmlFor="rp-word-spacing" className="reading-label">
-          Word spacing <span className="reading-value">{prefs.wordSpacing}px</span>
-        </label>
-        <input
-          id="rp-word-spacing"
-          type="range"
-          min={-4} max={20} step={1}
-          className="reading-slider"
-          value={prefs.wordSpacing}
-          onChange={(e) => handleChange("wordSpacing", Number(e.target.value))}
-        />
-      </div>
+      <SpacingSelect id="rp-letter-spacing" label="Letter spacing" value={prefs.letterSpacing} presets={LETTER_SPACING_PRESETS} classes={CLASSES} onChange={(value) => handleChange("letterSpacing", value)} />
+      <SpacingSelect id="rp-word-spacing" label="Word spacing" value={prefs.wordSpacing} presets={WORD_SPACING_PRESETS} classes={CLASSES} onChange={(value) => handleChange("wordSpacing", value)} />
 
       <div className="reading-row">
         <label htmlFor="rp-paragraph-spacing" className="reading-label">
@@ -167,7 +145,18 @@ export default function ReadingPanel(): React.ReactElement {
           value={prefs.paragraphSpacing}
           onChange={(e) => handleChange("paragraphSpacing", Number(e.target.value))}
         />
+        <label className="reading-check">
+          <input type="checkbox" checked={prefs.paragraphSpacing >= DOUBLE_PARAGRAPH_SPACING} onChange={(e) => handleChange("paragraphSpacing", e.target.checked ? DOUBLE_PARAGRAPH_SPACING : 0)} />
+          Double paragraph spacing
+        </label>
       </div>
+
+      {TEXT_SHAPE_TOGGLES.map(([key, label]) => (
+        <label key={key} className="reading-check">
+          <input type="checkbox" checked={Boolean(prefs[key])} onChange={(e) => handleChange(key, e.target.checked)} />
+          {label}
+        </label>
+      ))}
 
       <div className="reading-row">
         <label htmlFor="rp-max-width" className="reading-label">

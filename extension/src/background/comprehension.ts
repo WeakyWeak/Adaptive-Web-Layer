@@ -8,6 +8,8 @@ import { chunkText } from "../shared/chunk";
 import {
   GlossaryResultSchema,
   MAX_DEFINITION_WORDS,
+  PAGE_KINDS,
+  SELECTION_KINDS,
   readingMinutes,
   readUnderstand,
   SelectionResultSchema,
@@ -147,6 +149,25 @@ async function runJob(tabId: number, kind: ComprehensionKind, hostname: string, 
 }
 
 // ── TL;DR and glossary ────────────────────────────────────────────────────────
+/** What a page job gets: the routed model, the page's text, and the per-tab state. */
+export interface PageJob {
+  runner: Runner;
+  tabId: number;
+  url: string;
+  /** Page text, code marked (mask() turns it into placeholders). */
+  text: string;
+  title: string;
+  refresh: boolean;
+  stage: (stage: string) => Promise<unknown>;
+  update: (change: (state: UnderstandState) => UnderstandState) => Promise<UnderstandState>;
+}
+
+// Page jobs that live in their own module (the P11 reading view) register here.
+const pageRunners = new Map<PageKind, (job: PageJob) => Promise<void>>();
+export function registerPageRunner(kind: PageKind, run: (job: PageJob) => Promise<void>): void {
+  pageRunners.set(kind, run);
+}
+
 export async function runPageKind(tabId: number, kind: PageKind, refresh = false): Promise<void> {
   const page = await tabPage(tabId);
   if (!page) {
@@ -159,6 +180,11 @@ export async function runPageKind(tabId: number, kind: PageKind, refresh = false
     const plain = stripCodeMarks(parsed.data.text);
     if (plain.length < MIN_PAGE_CHARS) throw new ProviderError("unsupported", "There is not enough article text on this page.", "Try a page with a longer article, or select text and use Explain simply.");
 
+    const registered = pageRunners.get(kind);
+    if (registered) {
+      await registered({ runner, tabId, url: page.url, text: parsed.data.text, title: parsed.data.title, refresh, stage: (stage) => setStage(tabId, stage), update: (change) => updateState(tabId, change) });
+      return;
+    }
     const key = await cacheKey(kind, page.url, parsed.data.text);
     if (kind === "summarize") {
       const cached = refresh ? null : await readCache(key, SummaryResultSchema);
@@ -244,9 +270,12 @@ export async function glossaryOf(runner: Runner, text: string, title: string, st
   return { terms: checked.terms, shown: true, source: runner.source(), cached: false, notes };
 }
 
-export async function hideOnPage(tabId: number, what: "summary" | "glossary"): Promise<void> {
+export async function hideOnPage(tabId: number, what: "summary" | "glossary" | "readingView"): Promise<void> {
   if (what === "summary") tell(tabId, { type: "SHOW_SUMMARY", summary: null });
-  else {
+  else if (what === "readingView") {
+    tell(tabId, { type: "SHOW_READING_VIEW", view: null });
+    await updateState(tabId, (state) => (state.readingView ? { ...state, readingView: { ...state.readingView, shown: false } } : state));
+  } else {
     tell(tabId, { type: "SHOW_GLOSSARY", terms: null });
     await updateState(tabId, (state) => (state.glossary ? { ...state, glossary: { ...state.glossary, shown: false } } : state));
   }
@@ -344,8 +373,9 @@ export async function retryUnderstand(tabId: number, local = false): Promise<str
   const state = await readUnderstand(tabId);
   const error = state?.error;
   if (!error) return "Nothing to retry.";
-  if (error.kind === "summarize" || error.kind === "glossary") { void runPageKind(tabId, error.kind); return null; }
-  if (!error.selection) return "Select the text again and choose an action.";
-  void runSelection(tabId, { type: "UNDERSTAND_SELECTION", requestId: `retry-${Date.now()}`, kind: error.kind, text: error.selection.text, context: error.selection.context, target: error.kind === "translate" ? DEFAULT_TARGET : undefined, local });
+  if ((PAGE_KINDS as readonly string[]).includes(error.kind)) { void runPageKind(tabId, error.kind as PageKind); return null; }
+  const kind = SELECTION_KINDS.find((item) => item === error.kind);
+  if (!error.selection || !kind) return "Select the text again and choose an action.";
+  void runSelection(tabId, { type: "UNDERSTAND_SELECTION", requestId: `retry-${Date.now()}`, kind, text: error.selection.text, context: error.selection.context, target: error.kind === "translate" ? DEFAULT_TARGET : undefined, local });
   return null;
 }

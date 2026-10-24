@@ -6,7 +6,7 @@ import { z } from "zod";
 import { zodToJsonSchema, type JsonSchema } from "./jsonSchema";
 import { TARGET_CODES } from "./languages";
 
-export const PAGE_KINDS = ["summarize", "glossary"] as const;
+export const PAGE_KINDS = ["summarize", "glossary", "readingView"] as const;
 export const SELECTION_KINDS = ["simplify", "define", "translate"] as const;
 export type PageKind = typeof PAGE_KINDS[number];
 export type SelectionKind = typeof SELECTION_KINDS[number];
@@ -34,6 +34,17 @@ export const SimplifyReplySchema = z.object({
   text: z.string().min(1).max(8000).describe("The same content in plain English; placeholders like [[1]] copied unchanged"),
   gradeLevel: z.number().min(1).max(16).describe("School grade level of your rewrite"),
 });
+/** P11 dyslexia reading view: one part of the article rewritten into short, plain blocks. */
+export const READING_BLOCK_KINDS = ["heading", "paragraph", "list"] as const;
+export const ReadingViewReplySchema = z.object({
+  blocks: z.array(z.object({
+    kind: z.enum(READING_BLOCK_KINDS),
+    text: z.string().max(1200).describe("The heading or paragraph text; for a list, a short lead-in or \"\""),
+    items: z.array(z.string().min(1).max(400)).max(12).describe("The list entries; [] unless kind is list"),
+  })).min(1).max(40).describe("The rewritten part, in order"),
+});
+export type ReadingBlock = z.infer<typeof ReadingViewReplySchema>["blocks"][number];
+
 export const TranslateReplySchema = z.object({
   text: z.string().min(1).max(12000).describe("The translation; placeholders like [[1]] copied unchanged"),
 });
@@ -44,6 +55,7 @@ export const REPLY_SCHEMAS = {
   simplify: SimplifyReplySchema,
   define: GlossaryReplySchema,
   translate: TranslateReplySchema,
+  readingView: ReadingViewReplySchema,
 } as const satisfies Record<ComprehensionKind, z.ZodTypeAny>;
 
 export function replyJsonSchema(kind: ComprehensionKind): JsonSchema {
@@ -113,6 +125,27 @@ export const SummaryResultSchema = z.object({
 export type SummaryResult = z.infer<typeof SummaryResultSchema>;
 
 export const GlossaryResultSchema = z.object({ terms: z.array(GlossaryTermSchema).max(MAX_TERMS), shown: z.boolean().default(false), ...Meta });
+
+/** How the reading view was checked: code always; the cloud only with page-text consent. */
+export const ReadingChecksSchema = z.object({
+  /** Parts the code check flagged (numbers, names or negations that changed). */
+  flagged: z.number().int().min(0),
+  parts: z.number().int().min(0),
+  /** reviewed: the cloud checked some parts · not-allowed: no page-text consent (or local / Demo mode) · failed: the review errored. */
+  review: z.enum(["reviewed", "not-allowed", "failed"]),
+  reviewedParts: z.number().int().min(0).default(0),
+  issues: z.number().int().min(0).default(0),
+});
+export const ReadingViewResultSchema = z.object({
+  summary: z.array(z.string().max(600)).max(3),
+  blocks: z.array(z.object({ kind: z.enum(READING_BLOCK_KINDS), text: z.string().max(2400), items: z.array(z.string().max(800)).max(12) })).max(240),
+  /** Share of the main text the view covers (long pages are cut to a budget). */
+  coverage: z.number().min(0).max(1),
+  checks: ReadingChecksSchema,
+  shown: z.boolean().default(false),
+  ...Meta,
+});
+export type ReadingViewResult = z.infer<typeof ReadingViewResultSchema>;
 export type GlossaryResult = z.infer<typeof GlossaryResultSchema>;
 
 export const SelectionResultSchema = z.object({
@@ -132,6 +165,7 @@ export const UnderstandStateSchema = z.object({
   summary: SummaryResultSchema.optional(),
   glossary: GlossaryResultSchema.optional(),
   selection: SelectionResultSchema.optional(),
+  readingView: ReadingViewResultSchema.optional(),
   running: z.object({ id: z.string(), kind: z.enum([...PAGE_KINDS, ...SELECTION_KINDS]), stage: z.string(), startedAt: z.number() }).optional(),
   error: z.object({
     kind: z.enum([...PAGE_KINDS, ...SELECTION_KINDS]),

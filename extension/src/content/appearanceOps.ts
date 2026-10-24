@@ -3,6 +3,7 @@ import { registerOperation, type Operation } from "../shared/registry";
 import { AppearancePrefsSchema } from "../shared/settings";
 import type { AppearancePrefs } from "../shared/settings";
 import { APPEARANCE_PRESERVE_SELECTOR } from "./appearancePreserve";
+import { tintOperations, tintPlanStep } from "./dyslexiaOps";
 import { readabilityOperations, readabilityPlanSteps } from "./readabilityOps";
 import { createSmartPalette, type SmartPalette } from "./smartPalette";
 import { setStyleEntry } from "./styleEntry";
@@ -137,6 +138,7 @@ export const appearanceOperations: Operation<unknown>[] = [
   variableOperation("contrast", "Contrast", ContrastSchema, "contrast", 1) as Operation<unknown>,
   variableOperation("brightness", "Brightness", BrightnessSchema, "brightness", 1) as Operation<unknown>,
   variableOperation("saturation", "Saturation / grayscale", SaturationSchema, "saturation", 1) as Operation<unknown>,
+  ...tintOperations,
   ...readabilityOperations,
 ];
 
@@ -156,6 +158,8 @@ export function appearancePlanSteps(
     { opId: "brightness", params: { value: prefs.brightness } },
     { opId: "saturation", params: { value: prefs.saturation } },
     { opId: "appearanceFilter", params: { theme, engine: prefs.engine, skip: skipTheme, contrast: prefs.contrast, brightness: prefs.brightness, saturation: prefs.saturation } },
+    // P11: the tint repaints white surfaces after the theme; the readability fixes then read the tinted colours.
+    tintPlanStep(prefs, theme, bodyReady),
     // After the theme, so the contrast fix measures the colours the theme produced.
     ...readabilityPlanSteps(prefs, theme, bodyReady),
   ];

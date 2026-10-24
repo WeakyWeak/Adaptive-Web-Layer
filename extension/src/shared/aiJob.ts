@@ -5,7 +5,7 @@
 import { z } from "zod";
 import { ElementItemSchema, RejectedElementSchema } from "./elementPlan";
 import { LedgerEntrySchema, MeasuresSchema } from "./review";
-import { SiteRuleSchema } from "./settings";
+import { ReadingAidsSchema, SiteRuleSchema } from "./settings";
 
 const ChangesSchema = z.record(z.union([z.string(), z.number(), z.boolean()]));
 
@@ -82,8 +82,10 @@ export const AiJobSchema = z.object({
   fallback: z.object({ changes: ChangesSchema, descriptions: z.array(z.string()), elements: z.array(ElementItemSchema).optional() }).optional(),
   /** Exact-host site rule before Apply; restored by Undo (null = there was none). */
   previousRule: SiteRuleSchema.nullable().optional(),
-  /** P10: which button started it (typed request, Clean this page, Fix this page). */
-  kind: z.enum(["ask", "clean", "fix"]).optional(),
+  /** P10: which button started it (typed request, Clean this page, Fix this page); P11: describeMe (profile from a description). */
+  kind: z.enum(["ask", "clean", "fix", "describeMe"]).optional(),
+  /** P11 describeMe: the profile the preview would be saved as. */
+  profile: z.object({ name: z.string().max(64), aids: ReadingAidsSchema, lens: z.boolean(), note: z.string().max(240) }).optional(),
   /** P10: draft → measure → review → final, with what happened to each item. */
   supervision: SupervisionSchema.optional(),
 });

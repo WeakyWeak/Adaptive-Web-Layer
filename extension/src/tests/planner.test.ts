@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildSystemPrompt, buildUserPrompt, dropUnrequestedColour, runPlanner, type StructuredGenerator } from "../background/planner";
+import { buildSystemPrompt, buildUserPrompt, dropUnrequestedColour, dropUnrequestedSwitches, runPlanner, type StructuredGenerator } from "../background/planner";
 import { AI_FIELDS, describeChanges } from "../shared/aiFields";
 import type { StructuredRequest } from "../shared/llmProvider";
 import { detectShortcut, effectiveChanges, formatProviderError, parsePlan, ProviderError, type DomSnapshot } from "../shared/plan";
@@ -172,6 +172,15 @@ describe("formatProviderError", () => {
 
   it("keeps a custom hint", () => {
     expect(formatProviderError(new ProviderError("auth", "no", "custom")).hint).toBe("custom");
+  });
+});
+
+describe("dropUnrequestedSwitches (P11)", () => {
+  it("keeps the dyslexia switches and the tint only on requests about them or about dyslexia", () => {
+    expect(dropUnrequestedSwitches("set this up for focused studying", { fontSize: 18, noItalics: true, unjustify: true, backgroundTint: "cream" })).toEqual({ changes: { fontSize: 18 }, dropped: ["noItalics", "unjustify", "backgroundTint"] });
+    expect(dropUnrequestedSwitches("italics are hard to read", { noItalics: true }).changes).toEqual({ noItalics: true });
+    expect(dropUnrequestedSwitches("white pages glare", { backgroundTint: "peach" }).changes).toEqual({ backgroundTint: "peach" });
+    expect(dropUnrequestedSwitches("I have dyslexia", { unjustify: true, noAllCaps: true }).changes).toEqual({ unjustify: true, noAllCaps: true });
   });
 });
 

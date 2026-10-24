@@ -6,6 +6,7 @@ import type { Settings } from "../../shared/settings";
 import type { ActiveTab } from "../hooks";
 import AiPanel from "./AiPanel";
 import InspectPanel from "./InspectPanel";
+import ReadingSupportPanel from "./ReadingSupportPanel";
 import UnderstandPanel from "./UnderstandPanel";
 
 export interface SidePanelSectionProps {
@@ -23,4 +24,5 @@ export const sections: SidePanelSection[] = [
   { id: "ai", title: "Ask AI to adapt this page", Component: AiPanel },
   { id: "understand", title: "Understand this page", Component: UnderstandPanel },
   { id: "inspect", title: "Inspect", Component: InspectPanel },
+  { id: "reading", title: "Reading support", Component: ReadingSupportPanel },
 ];
