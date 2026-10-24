@@ -95,6 +95,14 @@ export default function UnderstandPanel({ tab, settings }: SidePanelSectionProps
   const usable = Boolean(tab?.hostname) && /^https?:/.test(tab?.url ?? "");
   const running = state?.running;
   const send = async (message: Record<string, unknown>) => { if (tab) setError(await command({ ...message, tabId: tab.id })); };
+  // The plain reading view needs no model: the page builds it from its own main content.
+  const plainView = () => {
+    if (!tab) return;
+    chrome.tabs.sendMessage(tab.id, { type: "SHOW_PLAIN_READER" }, (response?: { ok?: boolean; error?: string }) => {
+      if (chrome.runtime.lastError) setError("Could not open the reading view. Reload the page (the extension may have been updated after it loaded).");
+      else setError(response?.ok === false ? response.error ?? "Could not open the reading view." : null);
+    });
+  };
 
   return (
     <div className="understand-panel">
@@ -103,11 +111,13 @@ export default function UnderstandPanel({ tab, settings }: SidePanelSectionProps
         {state?.glossary?.shown
           ? <button disabled={!usable} onClick={() => void send({ type: "UNDERSTAND_HIDE", what: "glossary" })}>Hide glossary</button>
           : <button disabled={!usable || Boolean(running)} onClick={() => void send({ type: "UNDERSTAND_RUN", kind: "glossary" })}>Show glossary</button>}
+        <button disabled={!usable} onClick={plainView} title="The main content exactly as written, in your reading settings, without the rest of the page. No AI, no summary">Plain reading view</button>
         <button disabled={!usable || Boolean(running)} onClick={() => void send({ type: "UNDERSTAND_RUN", kind: "readingView" })} title="The AI rewrites the main text into short paragraphs and lists, code checks the facts, and (with your consent) the cloud reviews it">Dyslexia reading view</button>
       </div>
       <ul className="muted small help">
         <li><strong>TL;DR</strong>: 3–5 sentence summary of the article, shown at the top of the page.</li>
         <li><strong>Glossary</strong>: the AI picks up to 12 hard words or jargon used in this article (for example "basis points"), underlines them on the page and explains each in plain English. Hover an underlined word, or press Show below, to see its meaning.</li>
+        <li><strong>Plain reading view</strong>: the main content exactly as written, in your reading settings, without menus, sidebars or ads. No AI, no summary, instant.</li>
         <li><strong>Dyslexia reading view</strong>: the main text as short paragraphs and lists with a 3-line summary first, checked against the original for changed facts. It opens over the page; the original stays one click away.</li>
         <li><strong>Selection</strong>: select text on the page and press ✨ Understand to explain it simply, define it or translate it to Hindi.</li>
       </ul>

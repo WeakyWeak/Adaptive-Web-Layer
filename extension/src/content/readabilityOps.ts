@@ -83,7 +83,7 @@ const fixContrast: Operation<z.infer<typeof FixContrastSchema>> = {
   },
 };
 
-// ─── Text colour ─────────────────────────────────────────────────────────────
+// ─── Text and link colour ────────────────────────────────────────────────────
 type TextColor = Exclude<typeof TEXT_COLOR_OPTIONS[number], "">;
 /**
  * Each named colour in two shades: for light backgrounds (≥ 4.5:1 on white)
@@ -102,8 +102,6 @@ export const TEXT_SHADES: Record<TextColor, { onLight: string; onDark: string }>
   grey: { onLight: "#4a4a4a", onDark: "#c4c4c4" },
   black: { onLight: "#111111", onDark: "#f8f8f8" },
 };
-const TEXT_MARKER = "data-awl-text-color";
-
 /** The shade of `name` that reads on `background`, or null when neither does (a mid-tone band). */
 export function textShadeFor(name: TextColor, background: Color, required = 4.5): "onLight" | "onDark" | null {
   const shades = TEXT_SHADES[name];
@@ -112,8 +110,8 @@ export function textShadeFor(name: TextColor, background: Color, required = 4.5)
   return ratio(best) >= required ? best : null;
 }
 
-/** Mark the prose elements in `elements` with the shade that reads on what is behind them. */
-function markTextColor(win: Window, elements: readonly Element[], name: TextColor, token: string): void {
+/** Mark the elements in `elements` with the shade that reads on what is behind them. */
+function markColour(win: Window, elements: readonly Element[], name: TextColor, attribute: string, token: string): void {
   const backdropOf = createBackdropResolver(win);
   const marks: Array<{ element: Element; shade: string }> = [];
   for (const element of elements) {
@@ -126,33 +124,41 @@ function markTextColor(win: Window, elements: readonly Element[], name: TextColo
     const shade = textShadeFor(name, backdrop, requiredContrast(style));
     if (shade) marks.push({ element, shade });
   }
-  for (const { element, shade } of marks) element.setAttribute(TEXT_MARKER, `${token}-${shade}`);
+  for (const { element, shade } of marks) element.setAttribute(attribute, `${token}-${shade}`);
 }
 
-const TextColorSchema = z.object({ value: z.enum(TEXT_COLOR_OPTIONS), bodyReady: z.boolean() });
+const ColourSchema = z.object({ value: z.enum(TEXT_COLOR_OPTIONS), bodyReady: z.boolean() });
 
-const textColor: Operation<z.infer<typeof TextColorSchema>> = {
-  id: "textColor", label: "Text colour", target: "prose", protectedElements: PROTECTED_SELECTOR.split(", "), paramsSchema: TextColorSchema, validate: () => null,
-  apply(ctx, params) {
-    if (!params.value || typeof document === "undefined" || !document.body) return setStyleEntry(ctx, "textColor", null);
-    const name = params.value;
-    const win = window;
-    const token = markerToken();
-    // The text the typography settings reach (the article, or the whole page); links keep their own colour.
-    const prose = `${buildProseSelector(getContentRegionSelector(ctx.applyToWholePage))}:not(a)`;
-    const inProse = (elements: Element[]) => elements.filter((element) => { try { return element.matches(prose); } catch { return false; } });
-    markTextColor(win, inProse(Array.from(document.body.querySelectorAll("*")).slice(0, INITIAL_LIMIT)), name, token);
-    const stop = watchAdded((batch) => markTextColor(win, inProse(batch), name, token));
-    // Two :not(#…) lift the rule above Smart dark's colours (one) and the site's !important ones.
-    const css = (["onLight", "onDark"] as const).map((shade) => `[${TEXT_MARKER}="${token}-${shade}"]:not(#awl-none):not(#awl-none) { color: ${TEXT_SHADES[name][shade]} !important; }`).join("\n");
-    return setStyleEntry(ctx, "textColor", css, () => {
-      stop();
-      clearMarks(TEXT_MARKER, token);
-    });
-  },
-};
+/**
+ * A named colour for the elements `selectorFor(region)` picks in the content
+ * region (or the whole page): text (links keep their own colour) or links.
+ */
+function colourOperation(id: "textColor" | "linkColor", label: string, attribute: string, selectorFor: (region: string) => string): Operation<z.infer<typeof ColourSchema>> {
+  return {
+    id, label, target: "prose", protectedElements: PROTECTED_SELECTOR.split(", "), paramsSchema: ColourSchema, validate: () => null,
+    apply(ctx, params) {
+      if (!params.value || typeof document === "undefined" || !document.body) return setStyleEntry(ctx, id, null);
+      const name = params.value;
+      const win = window;
+      const token = markerToken();
+      const selector = selectorFor(getContentRegionSelector(ctx.applyToWholePage));
+      const picked = (elements: Element[]) => elements.filter((element) => { try { return element.matches(selector); } catch { return false; } });
+      markColour(win, picked(Array.from(document.body.querySelectorAll("*")).slice(0, INITIAL_LIMIT)), name, attribute, token);
+      const stop = watchAdded((batch) => markColour(win, picked(batch), name, attribute, token));
+      // Two :not(#…) lift the rule above Smart dark's colours (one) and the site's !important ones.
+      const css = (["onLight", "onDark"] as const).map((shade) => `[${attribute}="${token}-${shade}"]:not(#awl-none):not(#awl-none) { color: ${TEXT_SHADES[name][shade]} !important; }`).join("\n");
+      return setStyleEntry(ctx, id, css, () => { stop(); clearMarks(attribute, token); });
+    },
+  };
+}
 
-export const readabilityOperations: Operation<unknown>[] = [underlineLinks, focusRing, fixContrast, textColor] as Operation<unknown>[];
+// The text the typography settings reach (the article, or the whole page); links keep their own colour.
+const textColor = colourOperation("textColor", "Text colour", "data-awl-text-color", (region) => `${buildProseSelector(region)}:not(a)`);
+// Every link on the page (menus too: "make the links red" means all of them), and the text inside it;
+// each gets the shade that reads on its own background; code and controls are skipped (SKIP).
+const linkColor = colourOperation("linkColor", "Link colour", "data-awl-link-color", () => ":is(a[href], a[href] *)");
+
+export const readabilityOperations: Operation<unknown>[] = [underlineLinks, focusRing, fixContrast, textColor, linkColor] as Operation<unknown>[];
 
 export function readabilityPlanSteps(prefs: AppearancePrefs, theme: AppearancePrefs["theme"], bodyReady: boolean) {
   return [
@@ -161,5 +167,6 @@ export function readabilityPlanSteps(prefs: AppearancePrefs, theme: AppearancePr
     { opId: "fixContrast", params: { enabled: prefs.fixContrast, theme, engine: prefs.engine, bodyReady } },
     // After the theme and the contrast fix, so it reads the colours they leave behind.
     { opId: "textColor", params: { value: prefs.textColor, bodyReady } },
+    { opId: "linkColor", params: { value: prefs.linkColor, bodyReady } },
   ];
 }

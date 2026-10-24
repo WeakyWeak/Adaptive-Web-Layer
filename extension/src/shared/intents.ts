@@ -32,6 +32,12 @@ const TINT_WORDS: Array<[RegExp, BackgroundTint]> = [[/\bpeach\b/, "peach"], [/\
 const COLOUR_NAMES = "red|orange|brown|green|teal|blue|purple|pink|gr[ae]y|black";
 /** "make the text red", "red text", "text colour blue". */
 const TEXT_COLOR_REQUEST = new RegExp(`\\b(text|font|letters?|words?)\\b.*\\b(${COLOUR_NAMES})\\b|\\b(${COLOUR_NAMES}) (text|font|letters|words)\\b`);
+/** "make the links red", "blue links". */
+const LINK_COLOR_REQUEST = new RegExp(`\\blinks?\\b.*\\b(${COLOUR_NAMES})\\b|\\b(${COLOUR_NAMES}) links?\\b`);
+/** A colour change only when a colour was named (never a reset to the site's colours by accident). */
+const named = (key: string, colour: string): PlanChanges => (colour ? { [key]: colour } : {});
+/** The named colour in a request ("grey" or "gray"). */
+const colourIn = (request: string) => TEXT_COLOR_OPTIONS.find((name) => name && new RegExp(`\\b${name === "grey" ? "gr[ae]y" : name}\\b`).test(request)) ?? "";
 
 const RULES: readonly IntentRule[] = [
   { pattern: /\b(dyslexi\w*)\b/, label: "dyslexia-friendly start", changes: () => dyslexiaStart() },
@@ -52,7 +58,9 @@ const RULES: readonly IntentRule[] = [
   { pattern: /\b(autoplay|auto-play|videos?)\b/, label: "pause autoplay", changes: () => ({ pauseAutoplay: true }) },
   { pattern: /\b(distract\w*|clutter\w*|focus)\b/, label: DIM_DISTRACTIONS, changes: () => ({ dimNonMain: true }) },
   { pattern: /\bsticky\b/, label: "unstick headers", changes: () => ({ staticifyStickyHeaders: true }) },
-  { pattern: TEXT_COLOR_REQUEST, label: "text colour", changes: (_c, request) => ({ textColor: TEXT_COLOR_OPTIONS.find((name) => name && new RegExp(`\\b${name === "grey" ? "gr[ae]y" : name}\\b`).test(request)) ?? "" }) },
+  { pattern: TEXT_COLOR_REQUEST, label: "text colour", changes: (_c, request) => named("textColor", colourIn(request.replace(/\blinks?\b.*/, ""))) },
+  { pattern: LINK_COLOR_REQUEST, label: "link colour", changes: (_c, request) => named("linkColor", colourIn(request.slice(request.search(/\blinks?\b/))) || colourIn(request)) },
+  { pattern: /\bunderlin\w*/, label: "underline links", changes: () => ({ underlineLinks: true }) },
   { pattern: /\b(gr[ae]yscale|no colou?rs?|black and white)\b/, label: "greyscale", changes: () => ({ saturation: 0 }) },
   { pattern: /\b(more|higher|increase)\b.*\bcontrast\b/, label: "more contrast", changes: (c) => ({ contrast: num(c, "contrast") + 0.3 }) },
   { pattern: /\b(too bright|dimmer|less bright)\b/, label: "dimmer", changes: (c) => ({ brightness: num(c, "brightness") - 0.15 }) },

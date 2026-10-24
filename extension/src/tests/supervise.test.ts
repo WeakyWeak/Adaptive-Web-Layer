@@ -224,7 +224,8 @@ describe("supervised fix", () => {
     plan = draftPlan({ changes: { theme: "dark", reduceMotion: true }, elements: { hide: [], dim: [], highlight: [] } });
     await runAiJob(TAB, "Make the text color red");
     const job = (await readJob(TAB))!;
-    expect(job.changes).toEqual({ reduceMotion: true });
+    // The red text the reader named is filled in by code (the draft left it out); the theme is still undone.
+    expect(job.changes).toEqual({ reduceMotion: true, textColor: "red" });
     expect(job.supervision?.ledger.find((entry) => entry.ref === "theme")).toMatchObject({ status: "reverted", reason: expect.stringMatching(/score fell/) });
   });
 

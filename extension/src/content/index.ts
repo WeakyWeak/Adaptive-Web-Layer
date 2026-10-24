@@ -14,7 +14,8 @@ import { ElementOutline } from "./elementOutline";
 import { clearPreviewMarks, previewSelectors } from "./previewMarks";
 import { extractPageText } from "./pageText";
 import { SummaryCard } from "./summaryCard";
-import { ReadingViewOverlay, readingViewStyle } from "./readingView";
+import { ReadingViewOverlay, readingViewStyle, rewrittenContent } from "./readingView";
+import { plainReading } from "./plainReader";
 import { activeGlossaryRanges, GlossaryTooltip, registerComprehensionOps } from "./glossary";
 import { SelectionPopover } from "./selectionPopover";
 import { applyPlan, type Revert } from "../shared/registry";
@@ -294,12 +295,19 @@ if (isRestrictedPage()) {
       return false;
     }
 
-    if (msg.type === "SHOW_READING_VIEW") {
-      if (msg.view) {
-        const settings = currentSettings;
-        const style = settings ? readingViewStyle(resolveTypography(settings, hostname), resolveAppearance(settings, hostname)) : "";
-        readingView.show(msg.view, document.title, style);
-      } else readingView.hide();
+    if (msg.type === "SHOW_READING_VIEW" || msg.type === "SHOW_PLAIN_READER") {
+      const settings = currentSettings;
+      const style = settings ? readingViewStyle(resolveTypography(settings, hostname), resolveAppearance(settings, hostname)) : "";
+      if (msg.type === "SHOW_PLAIN_READER") {
+        const region = document.querySelector(getContentRegionSelector(settings?.global.applyToWholePage ?? false)) ?? document.body;
+        const { title, blocks } = plainReading(region, document);
+        if (blocks.filter((block) => block.kind !== "heading").length === 0) {
+          sendResponse({ type: "ACK", ok: false, error: "No article text was found on this page." });
+          return false;
+        }
+        readingView.show({ label: "Reading view", chip: "Original text, no AI", title, summary: [], blocks, notes: [] }, style);
+      } else if (msg.view) readingView.show(rewrittenContent(msg.view, document.title), style);
+      else readingView.hide();
       sendResponse({ type: "ACK", ok: true });
       return false;
     }

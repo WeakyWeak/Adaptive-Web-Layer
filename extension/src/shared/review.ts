@@ -133,8 +133,9 @@ export function draftLedger(changes: PlanChanges, items: readonly ElementItem[],
 }
 
 // Same rule as the planner: colours change only when the request is about colour.
-const COLOUR_FIELDS = new Set(["theme", "contrast", "brightness", "saturation", "textColor", "backgroundTint"]);
-const COLOUR_WORDS = /colou?r|dark|night|light|bright|dim|sepia|warm|theme|contrast|gr[ae]y|saturat|eye|glare|white|black|faint|strain|mode|tint|cream|peach|background colou?r/i;
+export const COLOUR_FIELDS: ReadonlySet<string> = new Set(["theme", "contrast", "brightness", "saturation", "textColor", "linkColor", "backgroundTint"]);
+/** Requests about colour or light (named colours too: "make the links red"). */
+export const COLOUR_WORDS = /colou?r|dark|night|light|bright|dim|sepia|warm|theme|contrast|gr[ae]y|saturat|eye|glare|white|black|faint|strain|mode|tint|cream|peach|\b(red|orange|brown|green|teal|blue|purple|pink)\b/i;
 
 /** A reviewer's setting, normalised like a plan's and checked against its field's bounds. */
 function validSetting(key: string, raw: unknown): string | number | boolean | undefined {
@@ -324,6 +325,7 @@ const ASKED_FOR: Readonly<Record<string, RegExp>> = {
   focusRing: /\bfocus\b/i,
   reduceMotion: /\b(motion|animation\w*|moving)\b/i,
   textColor: /\b(text|font|letters?|words?) colou?rs?\b|\bcolou?r (of|for) the (text|font|letters|words)\b/i,
+  linkColor: /\blinks?\b.*\b(colou?r\w*|red|orange|brown|green|teal|blue|purple|pink|gr[ae]y|black)\b|\b(colou?r\w*|red|orange|brown|green|teal|blue|purple|pink|gr[ae]y|black) links?\b/i,
   backgroundTint: /\b(tint\w*|cream|peach|background colou?r|glare|too bright)\b/i,
   noItalics: /\bitalic\w*/i,
   unjustify: /\b(justif\w*|left[- ]align\w*)\b/i,

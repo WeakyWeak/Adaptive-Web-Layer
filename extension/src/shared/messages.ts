@@ -182,6 +182,8 @@ export const PageTextSchema = z.object({ type: z.literal("PAGE_TEXT"), url: z.st
 export const ShowSummarySchema = z.object({ type: z.literal("SHOW_SUMMARY"), summary: SummaryResultSchema.nullable() });
 /** P11: show (or, with null, close) the dyslexia reading view over the page; the page itself is never changed. */
 export const ShowReadingViewSchema = z.object({ type: z.literal("SHOW_READING_VIEW"), view: ReadingViewResultSchema.nullable() });
+/** P11: show the page's main content as written, in a reading view (no AI, no summary). */
+export const ShowPlainReaderSchema = z.object({ type: z.literal("SHOW_PLAIN_READER") });
 export const ShowGlossarySchema = z.object({ type: z.literal("SHOW_GLOSSARY"), terms: z.array(GlossaryTermSchema).nullable() });
 export const GlossaryShownSchema = z.object({ type: z.literal("GLOSSARY_SHOWN"), counts: z.record(z.number().int().min(0)) });
 // Side panel → content: scroll to a term and show its definition.
@@ -280,6 +282,7 @@ export const AnyMessageSchema = z.discriminatedUnion("type", [
   PageTextSchema,
   ShowSummarySchema,
   ShowReadingViewSchema,
+  ShowPlainReaderSchema,
   ShowGlossarySchema,
   GlossaryShownSchema,
   GlossaryRevealSchema,

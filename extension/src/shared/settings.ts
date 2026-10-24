@@ -56,6 +56,8 @@ export const AppearancePrefsSchema = z.object({
   focusRing: z.boolean().default(false),
   fixContrast: z.boolean().default(false),
   textColor: z.enum(TEXT_COLOR_OPTIONS).default(""),
+  /** Links in a named colour ("" keeps the site's); code picks a readable shade. */
+  linkColor: z.enum(TEXT_COLOR_OPTIONS).default(""),
   backgroundTint: z.enum(BACKGROUND_TINTS).default("none"),
 });
 export type AppearancePrefs = z.infer<typeof AppearancePrefsSchema>;

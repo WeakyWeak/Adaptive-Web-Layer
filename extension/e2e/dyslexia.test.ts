@@ -258,3 +258,72 @@ test("dyslexia reading view: local draft, code check, cloud review, preview over
     proxy.close();
   }
 });
+
+test("plain reading view: the main content as written, no AI, no summary, over an unchanged page", async () => {
+  const { context, worker, extensionId } = await launch();
+  try {
+    await worker.evaluate(async () => { await chrome.storage.local.set({ awl_settings: { version: 11, enabled: true, ai: { mode: "local", localEndpoint: "http://127.0.0.1:9" }, siteRules: [] } }); });
+    const { page, panel } = await open(context, worker, extensionId, "long-article.html");
+    const original = await page.locator("main").innerText();
+    await panel.getByRole("button", { name: "Plain reading view" }).click();
+    await expect(page.locator("[data-awl-overlay='reading-view']")).toBeVisible();
+    // The overlay is a closed shadow root: read its text through DevTools (which sees closed roots).
+    const cdp = await context.newCDPSession(page);
+    type DomNode = { nodeType: number; nodeValue: string; attributes?: string[]; children?: DomNode[]; shadowRoots?: DomNode[] };
+    const { root } = await cdp.send("DOM.getDocument", { depth: -1, pierce: true }) as { root: DomNode };
+    const textOf = (node: DomNode): string => node.nodeType === 3 ? node.nodeValue : [...(node.shadowRoots ?? []), ...(node.children ?? [])].map(textOf).join(" ");
+    // attributes is a flat [name, value, name, value…] list.
+    const isOverlay = (node: DomNode) => (node.attributes ?? []).some((value, index, list) => index % 2 === 1 && list[index - 1] === "data-awl-overlay" && value === "reading-view");
+    const find = (node: DomNode): DomNode | null => isOverlay(node) ? node : [...(node.shadowRoots ?? []), ...(node.children ?? [])].map(find).find(Boolean) ?? null;
+    const shown = textOf(find(root)!).replace(/\s+/g, " ");
+    expect(shown).toContain("Reading view");
+    expect(shown).toContain("Original text, no AI");
+    expect(shown).not.toContain("In short");
+    // Every paragraph of the article appears, word for word.
+    const paragraphs = await page.locator("article p").allInnerTexts();
+    for (const paragraph of paragraphs.filter((text) => text.trim().length > 40).slice(0, 5)) expect(shown).toContain(paragraph.replace(/\s+/g, " ").trim().slice(0, 60));
+    expect(await page.locator("main").innerText()).toBe(original);
+    await page.keyboard.press("Escape");
+    await expect(page.locator("[data-awl-overlay='reading-view']")).toBeHidden();
+  } finally {
+    await context.close();
+  }
+});
+
+/** A stand-in model that, like the 7B one, answers "red links, underlined" with the colour only. */
+function colourOnlyLlama(): Server {
+  return createServer((req, res) => {
+    if (req.url === "/v1/models") { res.end(JSON.stringify({ data: [{ id: "fake.gguf" }] })); return; }
+    req.resume();
+    req.on("end", () => {
+      const plan = { interpretedRequest: "Red links", changes: { linkColor: "red" }, reasons: ["red links"], confidence: 0.9 };
+      res.writeHead(200, { "Content-Type": "text/event-stream" });
+      res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: JSON.stringify(plan) } }] })}\n\n`);
+      res.end("data: [DONE]\n\n");
+    });
+  });
+}
+
+test("\"make the links red and underline it\": links turn a readable red and get underlined", async () => {
+  const llama = colourOnlyLlama();
+  const localEndpoint = await listen(llama);
+  const { context, worker, extensionId } = await launch();
+  try {
+    await worker.evaluate(async (endpoint) => { await chrome.storage.local.set({ awl_settings: { version: 11, enabled: true, ai: { mode: "local", localEndpoint: endpoint }, siteRules: [] } }); }, localEndpoint);
+    const { page, panel, tabId } = await open(context, worker, extensionId, "a11y-clean.html");
+    const link = () => page.locator("main p a[href]").first().evaluate((element) => { const style = getComputedStyle(element); return { color: style.color, underline: style.textDecorationLine }; });
+    expect((await link()).color).not.toBe("rgb(179, 38, 30)");
+    expect((await send(panel, { type: "AI_RUN", tabId, request: "make the links red and underline it", kind: "ask" })).ok).toBe(true);
+    await expect.poll(async () => (await panel.evaluate(async (id) => ((await chrome.storage.session.get(`awl_job_${id}`))[`awl_job_${id}`] as { status: string }).status, tabId))).toBe("preview");
+    const job = await panel.evaluate(async (id) => (await chrome.storage.session.get(`awl_job_${id}`))[`awl_job_${id}`] as { changes: Record<string, unknown>; warnings?: string[] }, tabId);
+    expect(job.changes).toEqual({ linkColor: "red", underlineLinks: true });
+    expect(job.warnings?.join(" ")).toMatch(/asked for it by name/);
+    await expect.poll(link).toEqual({ color: "rgb(179, 38, 30)", underline: "underline" });
+    expect((await send(panel, { type: "AI_APPLY", tabId })).ok).toBe(true);
+    await page.reload();
+    await expect.poll(link).toEqual({ color: "rgb(179, 38, 30)", underline: "underline" });
+  } finally {
+    await context.close();
+    llama.close();
+  }
+});

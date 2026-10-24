@@ -9,6 +9,8 @@ import { applyPlan, type StyleLayer } from "../shared/registry";
 import { AppearancePrefsSchema, defaultSettings, TEXT_COLOR_OPTIONS } from "../shared/settings";
 import { currentAiValues } from "../shared/sitePatch";
 import { PlanChangesSchema } from "../shared/aiFields";
+import { dropUnrequestedColour, dropUnrequestedSwitches } from "../background/planner";
+import { requestedFields } from "../shared/review";
 
 const WHITE = parseCssColor("#ffffff")!;
 const DARK = parseCssColor("#121212")!;
@@ -41,6 +43,17 @@ describe("text colour requests", () => {
     expect(matchIntents("Make the text color to red.", current)?.changes).toEqual({ textColor: "red" });
     expect(matchIntents("blue text please", current)?.changes).toEqual({ textColor: "blue" });
   });
+
+  it("links have their own colour, and \"make the links red and underline them\" is understood", () => {
+    expect(PlanChangesSchema.safeParse({ linkColor: "red" }).success).toBe(true);
+    const current = currentAiValues(defaultSettings(), "example.com");
+    expect(matchIntents("make the links red and underline them", current)?.changes).toEqual({ linkColor: "red", underlineLinks: true });
+    expect(matchIntents("make the text black and the links blue", current)?.changes).toEqual({ textColor: "black", linkColor: "blue" });
+    // A named colour is a colour request: the planner keeps it (it used to drop "red" as unasked-for colour).
+    expect(dropUnrequestedColour("make the links red and underline it", { linkColor: "red", underlineLinks: true }).changes).toEqual({ linkColor: "red", underlineLinks: true });
+    expect(dropUnrequestedSwitches("make the links red and underline it", { linkColor: "red", underlineLinks: true }).changes).toEqual({ linkColor: "red", underlineLinks: true });
+    expect(requestedFields("make the links red and underline it")).toEqual(new Set(["linkColor", "underlineLinks"]));
+  });
 });
 
 describe("text colour operation", () => {
@@ -68,6 +81,23 @@ describe("text colour operation", () => {
     result.revert();
     expect(styles.rules.has("textColor")).toBe(false);
     expect(marked("p")).toBe(false);
+  });
+
+  it("colours every link (and the text inside it) only, in a readable shade, and undoes cleanly", () => {
+    document.body.innerHTML = `<nav><a id="menu" href="#">Menu link</a></nav><main><p>${"Some article text to read. ".repeat(20)}<a id="plain" href="#">a link</a> and <a id="nested" href="#"><span id="inner">a nested link</span></a></p><pre><a href="#" id="code">code link</a></pre></main>`;
+    const styles = layer();
+    const result = applyPlan({ styleLayer: styles, applyToWholePage: false }, appearancePlanSteps(AppearancePrefsSchema.parse({ linkColor: "red", underlineLinks: true })));
+    expect(styles.rules.get("linkColor")).toContain(TEXT_SHADES.red.onLight);
+    expect(styles.rules.get("underlineLinks")).toContain("underline");
+    const marked = (id: string) => document.getElementById(id)?.hasAttribute("data-awl-link-color") ?? false;
+    expect(marked("plain")).toBe(true);
+    expect(marked("menu")).toBe(true);
+    expect(marked("inner")).toBe(true);
+    expect(marked("code")).toBe(false);
+    expect(document.querySelector("p")!.hasAttribute("data-awl-link-color")).toBe(false);
+    result.revert();
+    expect(styles.rules.has("linkColor")).toBe(false);
+    expect(document.querySelector("[data-awl-link-color]")).toBeNull();
   });
 
   it("does nothing with the site's colours", () => {
